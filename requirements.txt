@@ -1,0 +1,9 @@
+pymongo
+chromadb
+requests
+python-dotenv
+
+duckduckgo-search
+pydantic
+keyboard
+pyttsx3
