@@ -1,0 +1,3 @@
+# This file ensures the chroma_db directory is tracked in Git.
+# The actual ChromaDB data files are excluded via .gitignore.
+# ChromaDB will auto-create its database files here at runtime.

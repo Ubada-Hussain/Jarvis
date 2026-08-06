@@ -1,0 +1,44 @@
+# ─── Sensitive Configuration ───────────────────────────────────────────────────
+# NEVER commit API keys or DB credentials
+.env
+.env.*
+*.env
+
+# ─── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+*.spec
+
+# ─── Virtual Environment ───────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ─── ChromaDB Persistence ──────────────────────────────────────────────────────
+# The chroma_db folder contains local vector DB data — exclude binary blobs
+# but keep the folder reference via a .gitkeep in the directory itself
+chroma_db/
+
+# ─── Node / React Frontend (jarvis-ui) ─────────────────────────────────────────
+jarvis-ui/node_modules/
+jarvis-ui/dist/
+jarvis-ui/.env
+jarvis-ui/.env.*
+jarvis-ui/package-lock.json
+
+# ─── OS / Editor Artifacts ─────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
