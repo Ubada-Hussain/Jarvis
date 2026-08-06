@@ -28,26 +28,102 @@ class DevAgent(BaseAgent):
 
     def execute(self, task: str) -> str:
         """
-        Intercepts dev-tool commands via keyword heuristics,
-        otherwise falls back to LLM for code advice/generation.
+        Uses LLM Tool Calling to autonomously start/stop servers or inspect directories.
         """
         print(f"\n[{self.name}] Analyzing development task...")
-        task_lower = task.lower()
+        
+        # Define schemas for DevAgent's specific tools
+        START_SERVER_TOOL = {
+            "type": "function",
+            "function": {
+                "name": "start_server",
+                "description": "Starts the Vite React frontend development server for jarvis-ui. Use this when the user asks to 'start server' or 'start dev server'.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        }
+        STOP_SERVER_TOOL = {
+            "type": "function",
+            "function": {
+                "name": "stop_server",
+                "description": "Stops the running Vite React frontend development server. Use this when the user asks to 'stop server'.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        }
+        SERVER_STATUS_TOOL = {
+            "type": "function",
+            "function": {
+                "name": "server_status",
+                "description": "Checks if the development server is currently running.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        }
+        INSPECT_DIR_TOOL = {
+            "type": "function",
+            "function": {
+                "name": "inspect_directory",
+                "description": "Lists all files in the current working directory.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        }
+        
+        from core.tools import (
+            SEARCH_INTERNET_TOOL, search_internet, 
+            OPEN_URL_TOOL, open_url, 
+            OPEN_FILE_EXPLORER_TOOL, open_file_explorer,
+            OPEN_SYSTEM_SETTINGS_TOOL, open_system_settings,
+            PLAY_MEDIA_TOOL, play_media
+        )
+        
+        system_prompt = (
+            f"You are {self.name}. {self.description}\n"
+            "You can converse naturally in English, Urdu, and Punjabi. "
+            "CRITICAL RULE: Always reply in the same language the user speaks to you (e.g., if they speak Urdu, reply in Urdu using the native script like 'کیا حال ہے'). "
+            "Use your tools to perform actions on the local development environment. "
+            "CRITICAL RULE: If the user asks you to DO something, you MUST call the matching tool. Never describe manual steps."
+        )
+        
+        # --- RAG / Memory Injection ---
+        try:
+            relevant_chunks = self.memory.get_relevant_context(task, max_results=3)
+            if relevant_chunks:
+                system_prompt += "\n\n<MEMORY_CONTEXT>\n"
+                for chunk in relevant_chunks:
+                    system_prompt += f"- {chunk}\n"
+                system_prompt += "</MEMORY_CONTEXT>\n"
+        except Exception as e:
+            print(f"[RAG WARNING] Failed to retrieve context: {e}")
+            
+        response = self.llm.generate_response(
+            prompt=task,
+            system_prompt=system_prompt,
+            tools=[
+                START_SERVER_TOOL, STOP_SERVER_TOOL, SERVER_STATUS_TOOL, INSPECT_DIR_TOOL, 
+                SEARCH_INTERNET_TOOL, OPEN_URL_TOOL, OPEN_FILE_EXPLORER_TOOL, 
+                OPEN_SYSTEM_SETTINGS_TOOL, PLAY_MEDIA_TOOL
+            ],
+            tool_logic={
+                "start_server": self._start_server,
+                "stop_server": self._stop_server,
+                "server_status": self._server_status,
+                "inspect_directory": self._inspect_directory,
+                "search_internet": search_internet,
+                "open_url": open_url,
+                "open_file_explorer": open_file_explorer,
+                "open_system_settings": open_system_settings,
+                "play_media": play_media
+            }
+        )
+        
+        if not response:
+            return f"[{self.name} ERROR]: Failed to generate response."
 
-        if "list files" in task_lower or "inspect directory" in task_lower:
-            return self._inspect_directory()
-
-        if "start server" in task_lower or "start frontend" in task_lower:
-            return self._start_server()
-
-        if "stop server" in task_lower or "stop frontend" in task_lower:
-            return self._stop_server()
-
-        if "server status" in task_lower or "is server running" in task_lower:
-            return self._server_status()
-
-        # Fallback to LLM for coding advice or code generation
-        return super().execute(task)
+        # Log execution to memory
+        self.memory.save_interaction(
+            user_input=task, 
+            ai_response=response, 
+            activity_type=f"agent_execution_{self.name}"
+        )
+        return response
 
     # ─────────────────────────────────────────────────────────────────────────
     # Tool: Inspect Directory

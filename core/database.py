@@ -26,13 +26,13 @@ class ShortTermMemory:
             self.client = MongoClient(self.mongo_uri, serverSelectionTimeoutMS=3000)
             self.client.admin.command('ping') # Trigger a call to verify connection
             self.db = self.client[self.db_name]
-            print(f"✅ Successfully connected to MongoDB at {self.mongo_uri}")
+            print(f"[OK] Successfully connected to MongoDB at {self.mongo_uri}")
         except ConnectionFailure:
-            print(f"❌ Error: Could not connect to MongoDB at {self.mongo_uri}. Is it running?")
+            print(f"[WARN] MongoDB not reachable at {self.mongo_uri}. Running without short-term memory.")
             self.client = None
             self.db = None
         except Exception as e:
-            print(f"❌ Error initializing MongoDB connection: {e}")
+            print(f"[WARN] MongoDB init error: {e}. Running without short-term memory.")
             self.client = None
             self.db = None
 
@@ -47,8 +47,8 @@ class ShortTermMemory:
         Returns:
             str: The stringified ID of the inserted document, or None if failed.
         """
-        if not self.db:
-            print("⚠️ MongoDB is not connected. Skipping log.")
+        if self.db is None:
+            print("[WARN] MongoDB is not connected. Skipping log.")
             return None
         
         try:
@@ -57,7 +57,7 @@ class ShortTermMemory:
             result = collection.insert_one(data)
             return str(result.inserted_id)
         except Exception as e:
-            print(f"❌ Error writing to MongoDB: {e}")
+            print(f"[ERROR] Error writing to MongoDB: {e}")
             return None
 
 
@@ -80,9 +80,9 @@ class LongTermMemory:
             self.client = chromadb.PersistentClient(path=self.db_path)
             # Default collection for conversation history
             self.collection = self.client.get_or_create_collection(name="contextual_memory")
-            print(f"✅ Successfully initialized ChromaDB at {self.db_path}")
+            print(f"[OK] Successfully initialized ChromaDB at {self.db_path}")
         except Exception as e:
-            print(f"❌ Error initializing ChromaDB: {e}")
+            print(f"[ERROR] Error initializing ChromaDB: {e}")
             self.client = None
             self.collection = None
 
@@ -95,8 +95,8 @@ class LongTermMemory:
             metadata (dict, optional): Associated metadata.
             doc_id (str, optional): Unique ID for the document.
         """
-        if not self.collection:
-            print("⚠️ ChromaDB is not connected. Skipping storage.")
+        if self.collection is None:
+            print("[WARN] ChromaDB is not connected. Skipping storage.")
             return
 
         try:
@@ -109,7 +109,7 @@ class LongTermMemory:
                 ids=[doc_id]
             )
         except Exception as e:
-            print(f"❌ Error writing to ChromaDB: {e}")
+            print(f"[ERROR] Error writing to ChromaDB: {e}")
 
     def retrieve_context(self, query, n_results=3):
         """
@@ -122,8 +122,8 @@ class LongTermMemory:
         Returns:
             list: List of document strings that match the query.
         """
-        if not self.collection:
-            print("⚠️ ChromaDB is not connected. Returning empty context.")
+        if self.collection is None:
+            print("[WARN] ChromaDB is not connected. Returning empty context.")
             return []
 
         try:
@@ -133,5 +133,5 @@ class LongTermMemory:
             )
             return results.get('documents', [[]])[0]
         except Exception as e:
-            print(f"❌ Error querying ChromaDB: {e}")
+            print(f"[ERROR] Error querying ChromaDB: {e}")
             return []

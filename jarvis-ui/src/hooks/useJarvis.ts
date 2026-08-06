@@ -87,6 +87,13 @@ export function useJarvis() {
 
       const data = await res.json();
       addMessage('jarvis', data.response);
+      
+      // If the backend generated an audio URL, play it!
+      if (data.audio_url) {
+        const audio = new Audio(`${API_BASE.replace('/api', '')}${data.audio_url}`);
+        audio.play().catch(e => console.error("Audio play failed:", e));
+      }
+      
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Network error';
       addMessage('system', `[CONNECTION ERROR] ${msg} — Is the JARVIS backend running?`);
@@ -96,5 +103,46 @@ export function useJarvis() {
     }
   }, [isLoading, addMessage]);
 
-  return { messages, sendMessage, isLoading, status, checkConnection };
+  /**
+   * Sends an audio blob to the STT endpoint for transcription,
+   * then sends the transcribed text to the chat.
+   */
+  const sendAudio = useCallback(async (audioBlob: Blob) => {
+    if (isLoading) return;
+    setIsLoading(true);
+    addMessage('system', '> Processing voice input...');
+    
+    try {
+      const formData = new FormData();
+      formData.append('file', audioBlob, 'voice_input.webm');
+
+      const res = await fetch(`${API_BASE}/transcribe`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Transcription failed' }));
+        addMessage('system', `[VOICE ERROR] ${err.detail}`);
+        setIsLoading(false);
+        return;
+      }
+
+      const data = await res.json();
+      const transcribedText = data.text.trim();
+      
+      setIsLoading(false); // reset so sendMessage can run
+      if (transcribedText) {
+        // Send the transcribed text as a normal chat message!
+        sendMessage(transcribedText);
+      } else {
+        addMessage('system', '[VOICE ERROR] Could not understand audio.');
+      }
+    } catch (err: unknown) {
+      addMessage('system', '[VOICE ERROR] Network error while transcribing.');
+      setIsLoading(false);
+    }
+  }, [isLoading, addMessage, sendMessage]);
+
+  return { messages, sendMessage, sendAudio, isLoading, status, checkConnection };
 }

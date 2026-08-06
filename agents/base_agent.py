@@ -20,9 +20,55 @@ class BaseAgent:
         to add custom logic or tool usage before relying on the LLM.
         """
         print(f"\n[{self.name}] Thinking...")
-        system_prompt = f"You are {self.name}. {self.description}\nProvide concise and accurate answers."
+        system_prompt = (
+            f"You are {self.name}. {self.description}\n"
+            "Provide concise and accurate answers. "
+            "You can converse naturally in English, Urdu, and Punjabi. "
+            "CRITICAL RULE: Always reply in the same language the user speaks to you (e.g., if they speak Urdu, reply in Urdu using the native script like 'کیا حال ہے'). "
+            "CRITICAL RULE: If the user asks you to DO something on their computer (like open a website, play a song, open settings, or open a file explorer), "
+            "you MUST call the matching tool/function. Never describe manual steps for actions you have a tool for."
+        )
         
-        response = self.llm.generate_response(prompt=task, system_prompt=system_prompt)
+        # --- RAG / Memory Injection ---
+        try:
+            relevant_chunks = self.memory.get_relevant_context(task, max_results=3)
+            if relevant_chunks:
+                system_prompt += "\n\n<MEMORY_CONTEXT>\n"
+                for chunk in relevant_chunks:
+                    system_prompt += f"- {chunk}\n"
+                system_prompt += "</MEMORY_CONTEXT>\n"
+        except Exception as e:
+            print(f"[RAG WARNING] Failed to retrieve context: {e}")
+
+        
+        from core.tools import (
+            SEARCH_INTERNET_TOOL, search_internet,
+            OPEN_URL_TOOL, open_url,
+            OPEN_FILE_EXPLORER_TOOL, open_file_explorer,
+            OPEN_SYSTEM_SETTINGS_TOOL, open_system_settings,
+            PLAY_MEDIA_TOOL, play_media,
+            REMEMBER_FILE_TOOL, remember_file
+        )
+        response = self.llm.generate_response(
+            prompt=task, 
+            system_prompt=system_prompt,
+            tools=[
+                SEARCH_INTERNET_TOOL, 
+                OPEN_URL_TOOL, 
+                OPEN_FILE_EXPLORER_TOOL,
+                OPEN_SYSTEM_SETTINGS_TOOL,
+                PLAY_MEDIA_TOOL,
+                REMEMBER_FILE_TOOL
+            ],
+            tool_logic={
+                "search_internet": search_internet,
+                "open_url": open_url,
+                "open_file_explorer": open_file_explorer,
+                "open_system_settings": open_system_settings,
+                "play_media": play_media,
+                "remember_file": remember_file
+            }
+        )
         
         if not response:
             return f"[{self.name} ERROR]: Failed to generate response."

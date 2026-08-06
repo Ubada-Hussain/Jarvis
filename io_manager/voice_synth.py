@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 import pyttsx3
 
 class VoiceSynthesizer:
