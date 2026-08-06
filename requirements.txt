@@ -2,8 +2,9 @@ pymongo
 chromadb
 requests
 python-dotenv
-
 duckduckgo-search
 pydantic
 keyboard
 pyttsx3
+fastapi
+uvicorn[standard]
