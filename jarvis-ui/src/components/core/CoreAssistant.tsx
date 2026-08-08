@@ -29,7 +29,7 @@ const CoreAssistant: React.FC<CoreAssistantProps> = ({ systemState }) => {
       particles.push({ theta, phi, r: 95 + Math.random() * 10, speedOffset: Math.random() * Math.PI * 2 });
     }
 
-    const stateColors = {
+    const stateColors: Record<SystemState, { c1: string, c2: string, speed: number, spread: number, glow: number }> = {
       idle:      { c1: '255,59,78', c2: '122,22,34', speed: 0.15, spread: 1, glow: 0.35 },
       listening: { c1: '45,212,234', c2: '20,90,100', speed: 0.35, spread: 1.25, glow: 0.55 },
       thinking:  { c1: '255,80,60', c2: '150,20,10', speed: 1.4, spread: 0.85, glow: 0.75 },
@@ -84,12 +84,18 @@ const CoreAssistant: React.FC<CoreAssistantProps> = ({ systemState }) => {
   }, [systemState]);
 
   return (
-    <div className="flex flex-col items-center justify-center w-full h-full relative">
-      <canvas ref={canvasRef} width={360} height={360} className="block" />
-      <div className="font-display text-[13px] tracking-[4px] text-jarvis-text-dim mt-2 uppercase">
-        {systemState}
+    <>
+      <canvas ref={canvasRef} id="coreCanvas" width={360} height={360}></canvas>
+      <div className="core-caption" id="stateLabel">{systemState.toUpperCase()}</div>
+      
+      {/* Visual buttons for pure aesthetics, although backend controls state */}
+      <div className="state-row">
+        <button className={`state-btn ${systemState === 'idle' ? 'active' : ''}`} disabled>Idle</button>
+        <button className={`state-btn ${systemState === 'listening' ? 'active' : ''}`} disabled>Listening</button>
+        <button className={`state-btn ${systemState === 'thinking' ? 'active' : ''}`} disabled>Thinking</button>
+        <button className={`state-btn ${systemState === 'speaking' ? 'active' : ''}`} disabled>Speaking</button>
       </div>
-    </div>
+    </>
   );
 };
 
