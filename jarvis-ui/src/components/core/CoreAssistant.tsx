@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import type { SystemState } from '../../hooks/useJarvis';
+import { visualizer } from '../../utils/audioVisualizer';
 
 interface CoreAssistantProps {
   systemState: SystemState;
@@ -48,7 +49,16 @@ const CoreAssistant: React.FC<CoreAssistantProps> = ({ systemState }) => {
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, W, H);
 
-      const audioPulse = (systemState === 'listening' || systemState === 'speaking') ? (Math.sin(t * 6) * 0.15 + 1) : 1;
+      // Get real-time audio data
+      let micAmp = 0;
+      let ttsAmp = 0;
+      if (systemState === 'listening') micAmp = visualizer.getMicAmplitude();
+      if (systemState === 'speaking') ttsAmp = visualizer.getTTSAmplitude();
+      
+      const realTimePulse = 1 + (micAmp * 2) + (ttsAmp * 1.5);
+      const fallbackPulse = (systemState === 'listening' || systemState === 'speaking') ? (Math.sin(t * 6) * 0.15 + 1) : 1;
+      const audioPulse = (micAmp > 0.01 || ttsAmp > 0.01) ? realTimePulse : fallbackPulse;
+      
       const rot = t * cfg.speed;
 
       particles.forEach((p) => {
