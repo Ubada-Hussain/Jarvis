@@ -23,10 +23,9 @@ class BaseAgent:
         system_prompt = (
             f"You are {self.name}. {self.description}\n"
             "Provide concise and accurate answers. "
-            "You can converse naturally in English, Urdu, and Punjabi. "
-            "CRITICAL RULE: Always reply in the same language the user speaks to you (e.g., if they speak Urdu, reply in Urdu using the native script like 'کیا حال ہے'). "
-            "CRITICAL RULE: If the user asks you to DO something on their computer (like open a website, play a song, open settings, or open a file explorer), "
-            "you MUST call the matching tool/function. Never describe manual steps for actions you have a tool for."
+            "You can converse naturally in English, Urdu, and Punjabi, but YOU MUST DEFAULT TO ENGLISH. "
+            "CRITICAL RULE: If the user types in English (e.g., 'Hello', 'Hi'), YOU MUST REPLY IN ENGLISH. ONLY use Urdu or Punjabi if the user explicitly writes in those languages (e.g., 'kya haal hai', 'کیا حال ہے'). "
+            "CRITICAL RULE: DO NOT use any tools for simple greetings, casual chit-chat, or general questions that don't require external actions. Only use tools when explicitly asked to perform an action on the computer (like open a website, play a song, open settings, or open a file explorer). Never describe manual steps for actions you have a tool for."
         )
         
         # --- RAG / Memory Injection ---

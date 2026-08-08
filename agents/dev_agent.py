@@ -76,10 +76,10 @@ class DevAgent(BaseAgent):
         
         system_prompt = (
             f"You are {self.name}. {self.description}\n"
-            "You can converse naturally in English, Urdu, and Punjabi. "
-            "CRITICAL RULE: Always reply in the same language the user speaks to you (e.g., if they speak Urdu, reply in Urdu using the native script like 'کیا حال ہے'). "
+            "You can converse naturally in English, Urdu, and Punjabi, but YOU MUST DEFAULT TO ENGLISH. "
+            "CRITICAL RULE: If the user types in English (e.g., 'Hello', 'Hi'), YOU MUST REPLY IN ENGLISH. ONLY use Urdu or Punjabi if the user explicitly writes in those languages (e.g., 'kya haal hai', 'کیا حال ہے'). "
             "Use your tools to perform actions on the local development environment. "
-            "CRITICAL RULE: If the user asks you to DO something, you MUST call the matching tool. Never describe manual steps."
+            "CRITICAL RULE: DO NOT use any tools for simple greetings or casual chit-chat. Only use tools when explicitly asked to perform an action on the computer. Never describe manual steps."
         )
         
         # --- RAG / Memory Injection ---

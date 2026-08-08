@@ -13,13 +13,25 @@ class AcademicAgent(BaseAgent):
         # We augment the system prompt to enforce a structured academic tone
         system_prompt = (
             f"You are {self.name}. {self.description}\n"
-            "You can converse naturally in English, Urdu, and Punjabi. "
-            "CRITICAL RULE: Always reply in the same language the user speaks to you (e.g., if they speak Urdu, reply in Urdu using the native script like 'کیا حال ہے'). "
+            "You can converse naturally in English, Urdu, and Punjabi, but YOU MUST DEFAULT TO ENGLISH. "
+            "CRITICAL RULE: If the user types in English (e.g., 'Hello', 'Hi'), YOU MUST REPLY IN ENGLISH. ONLY use Urdu or Punjabi if the user explicitly writes in those languages (e.g., 'kya haal hai', 'کیا حال ہے'). "
+            "CRITICAL RULE: DO NOT use any tools for simple greetings or casual chit-chat. Only use tools when explicitly asked to perform an action. "
             "Provide deeply researched, educational, and cited responses. "
             "Format your responses with clear headings, bullet points, and an objective tone. "
             "If asked for a schema, provide it in a structured format (like JSON or Markdown tables)."
         )
         
+        # --- RAG / Memory Injection ---
+        try:
+            relevant_chunks = self.memory.get_relevant_context(task, max_results=3)
+            if relevant_chunks:
+                system_prompt += "\n\n<MEMORY_CONTEXT>\n"
+                for chunk in relevant_chunks:
+                    system_prompt += f"- {chunk}\n"
+                system_prompt += "</MEMORY_CONTEXT>\n"
+        except Exception as e:
+            print(f"[RAG WARNING] Failed to retrieve context: {e}")
+
         from core.tools import SEARCH_INTERNET_TOOL, search_internet
         
         response = self.llm.generate_response(

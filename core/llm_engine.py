@@ -13,7 +13,7 @@ class LLMEngine:
     def __init__(self):
         # --- GROQ IMPLEMENTATION ---
         self.api_key = os.getenv("GROQ_API_KEY")
-        self.model = "llama-3.3-70b-versatile"
+        self.model = "llama-3.1-8b-instant"
         if self.api_key and self.api_key != "your_key_here":
             self.client = Groq(api_key=self.api_key)
         else:

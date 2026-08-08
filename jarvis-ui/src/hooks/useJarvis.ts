@@ -7,7 +7,9 @@
  *   const { messages, sendMessage, status } = useJarvis();
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { visualizer } from '../utils/audioVisualizer';
+import { setReactorLoad, setReactorComplete, setReactorIdle } from './useReactorStore';
 
 export type MessageRole = 'user' | 'jarvis' | 'system';
 
@@ -32,15 +34,126 @@ export function useJarvis() {
     },
   ]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [status, setStatus] = useState<ConnectionStatus>('unknown');
 
-  /** Adds a message to the conversation log. */
   const addMessage = useCallback((role: MessageRole, content: string) => {
     setMessages((prev) => [
       ...prev,
       { id: crypto.randomUUID(), role, content, timestamp: new Date() },
     ]);
   }, []);
+
+  const [isListeningContinuous, setIsListeningContinuous] = useState(false);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const recognitionRef = useRef<any>(null);
+
+  // Poll for approval status
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/approval/status`);
+        if (res.ok) {
+          const data = await res.json();
+          setPendingAction(data.pending_action);
+        }
+      } catch (err) {
+        // silently ignore network errors during polling
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const respondToApproval = useCallback(async (approved: boolean) => {
+    try {
+      await fetch(`${API_BASE}/approval/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approved })
+      });
+      setPendingAction(null);
+    } catch (err) {
+      console.error("Failed to respond to approval:", err);
+    }
+  }, []);
+
+  // Initialize SpeechRecognition
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.warn("Speech recognition not supported in this browser.");
+      return;
+    }
+    
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    
+    recognition.onresult = (event: any) => {
+      const current = event.resultIndex;
+      const transcript = event.results[current][0].transcript;
+      if (transcript.trim()) {
+        const text = transcript.trim();
+        
+        // INTERCEPT FOR APPROVAL
+        // Since we can't reliably read pendingAction from closure inside this event 
+        // without complex ref wrapping, we handle it inside sendMessage.
+        sendMessage(text);
+      }
+    };
+    
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error:", event.error);
+    };
+    
+    recognitionRef.current = recognition;
+  }, []);
+
+  // Handle continuous listening auto-restart
+  useEffect(() => {
+    const recognition = recognitionRef.current;
+    if (!recognition) return;
+
+    const handleEnd = () => {
+      if (isListeningContinuous) {
+        try {
+          recognition.start();
+        } catch (e) {
+          // Ignore restart errors
+        }
+      }
+    };
+
+    recognition.onend = handleEnd;
+
+    if (isListeningContinuous) {
+      try {
+        visualizer.startMic();
+        recognition.start();
+      } catch (e) {
+        console.error("Error starting recognition:", e);
+      }
+    } else {
+      try {
+        visualizer.stopMic();
+        recognition.stop();
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    return () => {
+      recognition.onend = null;
+    };
+  }, [isListeningContinuous]);
+
+  const toggleContinuousListening = useCallback(() => {
+    if (!recognitionRef.current) {
+      addMessage('system', '[VOICE ERROR] Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+      return;
+    }
+    setIsListeningContinuous(prev => !prev);
+  }, [addMessage]);
 
   /**
    * Pings the backend to verify connectivity.
@@ -61,6 +174,12 @@ export function useJarvis() {
     }
   }, []);
 
+  // Use a ref to access the latest pendingAction inside sendMessage without adding it to dependencies
+  const pendingActionRef = useRef(pendingAction);
+  useEffect(() => {
+    pendingActionRef.current = pendingAction;
+  }, [pendingAction]);
+
   /**
    * Sends a message to the MasterAgent via POST /api/chat
    * and appends the response to the message log.
@@ -68,8 +187,32 @@ export function useJarvis() {
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || isLoading) return;
 
+    // INTERCEPT: If an action is pending, treat input as approval response
+    const currentPending = pendingActionRef.current;
+    if (currentPending) {
+       const lower = text.toLowerCase();
+       if (lower.includes('yes') || lower.includes('proceed') || lower.includes('y')) {
+          addMessage('user', `(Confirmed) ${text}`);
+          respondToApproval(true);
+       } else if (lower.includes('no') || lower.includes('cancel') || lower.includes('n')) {
+          addMessage('user', `(Cancelled) ${text}`);
+          respondToApproval(false);
+       } else {
+          addMessage('system', 'Please answer Yes or No to the pending security request.');
+       }
+       return;
+    }
+
     addMessage('user', text);
     setIsLoading(true);
+
+    let pct = 0;
+    setReactorLoad(pct, 'RUNNING: process_command');
+    const loadInterval = setInterval(() => {
+      pct += Math.random() * 10;
+      if (pct > 90) pct = 90 + Math.random() * 5;
+      setReactorLoad(pct, 'RUNNING: process_command');
+    }, 400);
 
     try {
       const res = await fetch(`${API_BASE}/chat`, {
@@ -82,6 +225,9 @@ export function useJarvis() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: 'Unknown server error' }));
         addMessage('system', `[ERROR ${res.status}] ${err.detail}`);
+        clearInterval(loadInterval);
+        setReactorComplete(false);
+        setTimeout(() => setReactorIdle(), 2000);
         return;
       }
 
@@ -90,18 +236,34 @@ export function useJarvis() {
       
       // If the backend generated an audio URL, play it!
       if (data.audio_url) {
+        setIsSpeaking(true);
         const audio = new Audio(`${API_BASE.replace('/api', '')}${data.audio_url}`);
-        audio.play().catch(e => console.error("Audio play failed:", e));
+        audio.crossOrigin = "anonymous";
+        audio.play().then(() => {
+          visualizer.connectTTS(audio);
+        }).catch(e => {
+          console.error("Audio play failed:", e);
+          setIsSpeaking(false);
+        });
+        audio.onended = () => {
+          setIsSpeaking(false);
+        };
       }
       
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Network error';
       addMessage('system', `[CONNECTION ERROR] ${msg} — Is the JARVIS backend running?`);
       setStatus('offline');
+      clearInterval(loadInterval);
+      setReactorComplete(false);
+      setTimeout(() => setReactorIdle(), 2000);
     } finally {
       setIsLoading(false);
+      clearInterval(loadInterval);
+      setReactorComplete(true);
+      setTimeout(() => setReactorIdle(), 2000);
     }
-  }, [isLoading, addMessage]);
+  }, [isLoading, addMessage, respondToApproval]);
 
   /**
    * Sends an audio blob to the STT endpoint for transcription,
@@ -144,5 +306,23 @@ export function useJarvis() {
     }
   }, [isLoading, addMessage, sendMessage]);
 
-  return { messages, sendMessage, sendAudio, isLoading, status, checkConnection };
+  const jarvisState = 
+    isSpeaking ? 'speaking' :
+    isLoading ? 'thinking' :
+    isListeningContinuous ? 'listening' :
+    'idle';
+
+  return { 
+    messages, 
+    sendMessage, 
+    sendAudio, 
+    isLoading, 
+    status, 
+    checkConnection, 
+    isListeningContinuous, 
+    toggleContinuousListening, 
+    pendingAction, 
+    respondToApproval,
+    jarvisState
+  };
 }

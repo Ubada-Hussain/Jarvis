@@ -44,6 +44,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from security.api_approval_manager import APIApprovalManager
+
 # ─── Singleton Initialization ─────────────────────────────────────────────────
 # These are expensive — initialize once on startup, not per request.
 print("=================================================")
@@ -51,7 +53,8 @@ print("  JARVIS API Server Starting...")
 print("=================================================")
 _memory = MemoryManager()
 _llm = LLMEngine()
-_master_agent = MasterAgent(_llm, _memory, approval_manager=None)
+_approval_manager = APIApprovalManager()
+_master_agent = MasterAgent(_llm, _memory, approval_manager=_approval_manager)
 print("\n[SERVER] JARVIS MasterAgent ready. Awaiting requests.\n")
 
 
@@ -84,8 +87,26 @@ class PingResponse(BaseModel):
     status: str
     message: str
 
+class ApprovalRespondRequest(BaseModel):
+    approved: bool
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
+
+@app.get("/api/approval/status", tags=["Approval"])
+async def approval_status():
+    """
+    Returns the currently pending action that requires approval, if any.
+    """
+    action = _approval_manager.get_pending_action()
+    return {"pending_action": action}
+
+@app.post("/api/approval/respond", tags=["Approval"])
+async def approval_respond(request: ApprovalRespondRequest):
+    """
+    Responds to a pending approval request.
+    """
+    _approval_manager.respond(request.approved)
+    return {"status": "ok"}
 
 @app.get("/api/ping", response_model=PingResponse, tags=["Health"])
 async def ping():
@@ -112,7 +133,7 @@ async def transcribe(file: UploadFile = File(...)):
 
 
 @app.post("/api/chat", response_model=ChatResponse, tags=["Agent"])
-async def chat(request: ChatRequest):
+def chat(request: ChatRequest):
     """
     Main chat endpoint.
     Passes the user's message to the MasterAgent which routes it to the
