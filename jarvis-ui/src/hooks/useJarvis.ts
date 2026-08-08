@@ -73,8 +73,21 @@ export function useJarvis() {
     const connectWS = () => {
       ws = new WebSocket(WS_BASE);
       ws.onmessage = (event) => {
-        const newState = event.data as SystemState;
-        setSystemState(newState);
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'state_sync') {
+            setSystemState(data.state as SystemState);
+          } else if (data.type === 'wake_word') {
+            // Wake word detected by backend! Turn on mic!
+            setIsListeningContinuous(true);
+          }
+        } catch {
+          // Fallback for old plain-text state
+          const newState = event.data as SystemState;
+          if (['idle', 'listening', 'thinking', 'speaking'].includes(newState)) {
+            setSystemState(newState);
+          }
+        }
       };
       ws.onclose = () => {
         setTimeout(connectWS, 2000); // Reconnect loop
