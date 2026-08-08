@@ -25,6 +25,7 @@ export type SystemState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
 const API_BASE = '/api';  // Proxied to http://localhost:8000 by Vite
 const WS_BASE = `ws://${window.location.host}/api/ws/state`;
+const WS_AGENTS = `ws://${window.location.host}/api/ws/agents`;
 
 export function useJarvis() {
   const [messages, setMessages] = useState<Message[]>([
@@ -39,6 +40,9 @@ export function useJarvis() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [status, setStatus] = useState<ConnectionStatus>('unknown');
   const [systemState, setSystemState] = useState<SystemState>('idle');
+  const [agentStates, setAgentStates] = useState<Record<string, string>>({
+    DEV: 'idle', SYS: 'idle', ACAD: 'idle', OBS: 'idle'
+  });
 
   const addMessage = useCallback((role: MessageRole, content: string) => {
     setMessages((prev) => [
@@ -94,6 +98,27 @@ export function useJarvis() {
       };
     };
     connectWS();
+    return () => {
+      if (ws) ws.close();
+    };
+  }, []);
+
+  // WebSocket for Agent Status (REAL parallel agent tracking)
+  useEffect(() => {
+    let ws: WebSocket;
+    const connectAgentWS = () => {
+      ws = new WebSocket(WS_AGENTS);
+      ws.onmessage = (event) => {
+        try {
+          const states = JSON.parse(event.data);
+          setAgentStates(states);
+        } catch { /* ignore parse errors */ }
+      };
+      ws.onclose = () => {
+        setTimeout(connectAgentWS, 2000);
+      };
+    };
+    connectAgentWS();
     return () => {
       if (ws) ws.close();
     };
@@ -362,6 +387,7 @@ export function useJarvis() {
     pendingAction, 
     respondToApproval,
     systemState,
-    jarvisState
+    jarvisState,
+    agentStates
   };
 }

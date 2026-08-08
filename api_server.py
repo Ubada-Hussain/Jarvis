@@ -28,11 +28,41 @@ from core.llm_engine import LLMEngine
 from core.memory_manager import MemoryManager
 from agents.master_agent import MasterAgent
 
+from contextlib import asynccontextmanager
+import json
+
+_wake_word_listener = None
+
+def handle_wake_word():
+    # Broadcast custom JSON to trigger mic
+    message = json.dumps({"type": "wake_word"})
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(ws_manager.broadcast(message))
+    except RuntimeError:
+        pass
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    global _wake_word_listener
+    try:
+        from io_manager.voice_listener import WakeWordListener
+        _wake_word_listener = WakeWordListener(on_wake_word_detected=handle_wake_word)
+        _wake_word_listener.start()
+    except Exception as e:
+        print(f"Wake word listener failed to start: {e}")
+    yield
+    # Shutdown
+    if _wake_word_listener:
+        _wake_word_listener.stop()
+
 # ─── App Initialization ────────────────────────────────────────────────────────
 app = FastAPI(
     title="JARVIS API",
     description="Backend API for the JARVIS multi-agent system.",
     version="1.0.0",
+    lifespan=lifespan
 )
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -98,6 +128,45 @@ class ConnectionManager:
 
 ws_manager = ConnectionManager()
 
+# ─── Agent Status WebSocket Manager ────────────────────────────────────────────
+class AgentStatusManager:
+    """Broadcasts real-time agent status (idle/working) to connected frontends."""
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        # Send current agent states immediately on connect
+        from agents.master_agent import agent_status
+        await websocket.send_text(json.dumps(agent_status))
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, status_dict: dict):
+        payload = json.dumps(status_dict)
+        for connection in list(self.active_connections):
+            try:
+                await connection.send_text(payload)
+            except Exception:
+                self.active_connections.remove(connection)
+
+agent_ws_manager = AgentStatusManager()
+
+def _on_agent_status_change(status_dict: dict):
+    """Called from MasterAgent threads when an agent's status changes."""
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(agent_ws_manager.broadcast(status_dict))
+    except RuntimeError:
+        pass
+
+# Register callback so MasterAgent can push status changes
+from agents.master_agent import set_agent_status_callback
+set_agent_status_callback(_on_agent_status_change)
+
 # Helper function to fire and forget async broadcast from sync code if needed, 
 # but FastAPI routes can just use await.
 def broadcast_state_sync(state: str):
@@ -136,6 +205,15 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket)
+
+@app.websocket("/api/ws/agents")
+async def agent_status_ws(websocket: WebSocket):
+    await agent_ws_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        agent_ws_manager.disconnect(websocket)
 
 @app.get("/api/approval/status", tags=["Approval"])
 async def approval_status():

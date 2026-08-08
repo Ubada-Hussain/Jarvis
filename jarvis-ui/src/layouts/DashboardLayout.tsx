@@ -6,7 +6,7 @@ import { useJarvis } from '../hooks/useJarvis';
 import SecurityPopup from '../components/core/SecurityPopup';
 
 const DashboardLayout: React.FC = () => {
-  const { messages, sendMessage, isLoading, status, checkConnection, isListeningContinuous, toggleContinuousListening, pendingAction, respondToApproval, systemState } = useJarvis();
+  const { messages, sendMessage, isLoading, status, checkConnection, isListeningContinuous, toggleContinuousListening, pendingAction, respondToApproval, systemState, agentStates } = useJarvis();
   const [input, setInput] = useState('');
   const terminalEndRef = useRef<HTMLDivElement>(null);
 
@@ -34,12 +34,11 @@ const DashboardLayout: React.FC = () => {
 
   const statusLabel = status === 'online' ? 'BACKEND ONLINE' : status === 'offline' ? 'BACKEND OFFLINE' : 'CONNECTING...';
 
-  const agentStates = {
-    'DEV': isLoading ? 'busy' : 'idle',
-    'SYS': isLoading ? 'busy' : 'idle',
-    'ACAD': 'idle',
-    'OBS': status === 'online' ? 'busy' : 'idle'
-  };
+  // Map backend agent states (working/idle) to UI states (busy/idle)
+  const uiAgentStates: Record<string, string> = {};
+  for (const [key, val] of Object.entries(agentStates)) {
+    uiAgentStates[key] = val === 'working' ? 'busy' : val;
+  }
 
   return (
     <>
@@ -62,7 +61,7 @@ const DashboardLayout: React.FC = () => {
 
         <div className="panel town-panel">
           <div className="panel-label">AGENT.TOWN</div>
-          <AgentTownGame agentStates={agentStates} />
+          <AgentTownGame agentStates={uiAgentStates} />
         </div>
 
         <div className="panel chat-panel">
