@@ -1,22 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import ReactorCore from '../components/core/ReactorCore';
+import CoreAssistant from '../components/core/CoreAssistant';
 import AgentTownGame from '../components/core/AgentTownGame';
 import { useJarvis } from '../hooks/useJarvis';
 
 import SecurityPopup from '../components/core/SecurityPopup';
 
 const DashboardLayout: React.FC = () => {
-  const { messages, sendMessage, isLoading, status, checkConnection, isListeningContinuous, toggleContinuousListening, pendingAction, respondToApproval } = useJarvis();
+  const { messages, sendMessage, isLoading, status, checkConnection, isListeningContinuous, toggleContinuousListening, pendingAction, respondToApproval, systemState } = useJarvis();
   const [input, setInput] = useState('');
   const terminalEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll terminal to latest message
   useEffect(() => {
     terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Ping backend on mount to show connection status
   useEffect(() => {
     checkConnection();
   }, [checkConnection]);
@@ -31,146 +29,112 @@ const DashboardLayout: React.FC = () => {
     if (e.key === 'Enter') handleSend();
   };
 
-  const toggleRecording = () => {
-    toggleContinuousListening();
-  };
+  const statusColor = status === 'online' ? 'bg-jarvis-cyan shadow-[0_0_8px_#2dd4ea]' : status === 'offline' ? 'bg-jarvis-crimson' : 'bg-jarvis-amber';
+  const statusLabel = status === 'online' ? 'BACKEND ONLINE' : status === 'offline' ? 'BACKEND OFFLINE' : 'CONNECTING...';
 
-  const statusColor =
-    status === 'online' ? 'bg-green-400' :
-    status === 'offline' ? 'bg-red-500' :
-    'bg-yellow-400';
-
-  const statusLabel =
-    status === 'online' ? 'BACKEND ONLINE' :
-    status === 'offline' ? 'BACKEND OFFLINE' :
-    'CONNECTING...';
-
-  // Basic derived state for AgentTown Phase 2 integration
-  // When isLoading is true, make DEV and SYS busy so they move to the center.
   const agentStates = {
     'DEV': isLoading ? 'busy' : 'idle',
     'SYS': isLoading ? 'busy' : 'idle',
     'ACAD': 'idle',
-    'OBS': status === 'online' ? 'busy' : 'idle' // OBS constantly monitoring if online
+    'OBS': status === 'online' ? 'busy' : 'idle'
   };
 
   return (
-    <div className="h-screen w-screen bg-[#050505] text-red-500 font-mono p-4 box-border overflow-hidden relative">
+    <div className="h-screen w-screen bg-jarvis-bg text-jarvis-text font-mono p-4 box-border overflow-hidden relative" style={{
+      backgroundImage: `radial-gradient(ellipse 900px 500px at 30% 20%, rgba(122,22,34,0.35), transparent 60%), radial-gradient(ellipse 700px 500px at 80% 80%, rgba(45,212,234,0.06), transparent 60%)`
+    }}>
       <SecurityPopup pendingAction={pendingAction} onRespond={respondToApproval} />
-      <div className="flex h-full w-full gap-4">
-
-        {/* Left Half: JARVIS Reactor Core */}
-        <div className="w-1/2 h-full relative">
-          <ReactorCore />
+      
+      {/* Topbar */}
+      <div className="flex justify-between items-center px-4 py-2 mb-4 border-b border-jarvis-panel-border">
+        <div className="font-display font-bold text-xl tracking-[6px] text-jarvis-text">J<span className="text-jarvis-crimson">A</span>RVIS</div>
+        <div className="flex items-center gap-2 text-[11px] tracking-[2px] text-jarvis-cyan border border-jarvis-cyan/30 px-3 py-1 rounded-full">
+          <div className={`w-2 h-2 rounded-full ${statusColor} ${status === 'online' ? 'animate-pulse' : ''}`}></div>
+          {statusLabel}
         </div>
+      </div>
 
-        {/* Right Half: Stacked Panels */}
-        <div className="w-1/2 h-full flex flex-col gap-4 min-h-0">
-          
-          {/* Top: Terminal & Output Module (Takes remaining space) */}
-          <div className="flex-grow bg-[#0a0a0a] border border-red-900/50 rounded-lg shadow-[0_0_15px_rgba(220,38,38,0.1)] relative flex flex-col min-h-0">
-            {/* Panel header */}
-            <div className="flex items-center justify-between bg-[#0a0a0a] px-3 py-1 rounded-t-lg border-b border-red-900/50 shrink-0">
-              <div className="flex items-center gap-2">
-                 <div className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
-                 <span className="text-[10px] font-bold tracking-widest uppercase text-red-500">TERMINAL.OUT</span>
-              </div>
-              <div className="flex items-center gap-2 text-[10px]">
-                <div className={`w-2 h-2 rounded-full ${statusColor} animate-pulse`} />
-                <span className={status === 'online' ? 'text-green-400' : status === 'offline' ? 'text-red-400' : 'text-yellow-400'}>
-                  {statusLabel}
-                </span>
-              </div>
-            </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4 h-[calc(100%-60px)] max-w-[1400px] mx-auto w-full">
 
-            {/* Message log */}
-            <div className="flex-grow p-4 overflow-y-auto text-sm space-y-2 bg-[#050505] rounded-b-lg font-mono">
-              {messages.map((msg) => (
-                <div key={msg.id} className="mb-2">
-                  {msg.role === 'user' && (
-                    <div>
-                      <span className="text-cyan-700 tracking-wider text-[10px] block">INPUT</span>
-                      <p className="text-cyan-400/90 text-xs">{msg.content}</p>
-                    </div>
-                  )}
-                  {msg.role === 'jarvis' && (
-                    <div className="mt-2">
-                      <span className="text-red-700 tracking-wider text-[10px] block">OUTPUT</span>
-                      <p className="text-red-400/90 whitespace-pre-wrap text-xs">{msg.content}</p>
-                    </div>
-                  )}
-                  {msg.role === 'system' && (
-                    <div className="mt-1">
-                      <span className="text-yellow-700/50 tracking-wider text-[10px] block">SYSTEM</span>
-                      <p className="text-yellow-600/50 italic text-xs">{msg.content}</p>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {isLoading && (
-                <p className="text-red-700 animate-pulse text-xs">&gt; Processing command...</p>
-              )}
-              <div ref={terminalEndRef} />
-            </div>
+        {/* Left Column */}
+        <div className="flex flex-col gap-4 h-full min-h-0">
+          {/* SYS.CORE */}
+          <div className="flex-grow relative bg-jarvis-panel bg-gradient-to-b from-white/[0.015] to-transparent border border-jarvis-panel-border rounded overflow-hidden">
+            <div className="absolute top-0 left-0 bg-jarvis-crimson/90 text-[#0a0a0a] font-semibold text-[11px] tracking-[2px] px-3 py-1 z-10">SYS.CORE</div>
+            <CoreAssistant systemState={systemState} />
           </div>
 
-          {/* Middle: Agent Town Module */}
-          <div className="h-[220px] shrink-0 bg-[#0a0a0a] border border-red-900/50 rounded-lg shadow-[0_0_15px_rgba(220,38,38,0.1)] relative flex flex-col">
-            <div className="absolute top-0 left-0 bg-red-950 px-3 py-1 text-xs tracking-widest border-b border-r border-red-900 rounded-br-lg z-10 z-20 flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
-              AGENT.TOWN
-            </div>
+          {/* AGENT.TOWN */}
+          <div className="h-[260px] shrink-0 relative bg-jarvis-panel bg-gradient-to-b from-white/[0.015] to-transparent border border-jarvis-panel-border rounded overflow-hidden">
+            <div className="absolute top-0 left-0 bg-jarvis-crimson/90 text-[#0a0a0a] font-semibold text-[11px] tracking-[2px] px-3 py-1 z-10">AGENT.TOWN</div>
             <AgentTownGame agentStates={agentStates} />
           </div>
+        </div>
 
-          {/* Bottom: Voice/Chat Interface */}
-          <div className="h-[120px] shrink-0 bg-[#0a0a0a] border border-red-900/50 rounded-lg shadow-[0_0_15px_rgba(220,38,38,0.1)] relative flex flex-col items-center justify-center p-4">
-            <div className="absolute top-0 left-0 bg-red-950 px-3 py-1 text-xs tracking-widest border-b border-r border-red-900 rounded-br-lg z-10 flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
-              COM.LINK
+        {/* Right Column: Chat/Voice */}
+        <div className="flex flex-col h-full bg-jarvis-panel bg-gradient-to-b from-white/[0.015] to-transparent border border-jarvis-panel-border rounded relative min-h-0">
+          <div className="absolute top-0 left-0 bg-jarvis-crimson/90 text-[#0a0a0a] font-semibold text-[11px] tracking-[2px] px-3 py-1 z-10">TERMINAL.OUT</div>
+          
+          <div className="flex-grow overflow-y-auto p-4 pt-10 flex flex-col gap-3">
+            {messages.map((msg) => (
+              <div key={msg.id} className={`max-w-[88%] text-[12.5px] leading-[1.5] ${msg.role === 'user' ? 'self-end text-jarvis-cyan text-right' : 'self-start text-jarvis-text'}`}>
+                <span className="text-[9px] tracking-[2px] opacity-55 block mb-1">
+                  {msg.role === 'user' ? 'YOU' : msg.role === 'jarvis' ? 'JARVIS' : 'SYSTEM'}
+                </span>
+                {msg.content}
+              </div>
+            ))}
+            {isLoading && (
+              <div className="self-start text-jarvis-crimson max-w-[88%] text-[12.5px] leading-[1.5]">
+                <span className="text-[9px] tracking-[2px] opacity-55 block mb-1">SYSTEM</span>
+                &gt; Processing command...
+              </div>
+            )}
+            <div ref={terminalEndRef} />
+          </div>
+
+          <div className="border-t border-jarvis-panel-border p-4">
+            {/* Waveform placeholder */}
+            <div className="flex items-end gap-[3px] h-[34px] mb-3">
+               {Array.from({ length: 28 }).map((_, i) => (
+                 <span key={i} className={`w-[3px] bg-jarvis-crimson rounded-sm opacity-75 ${systemState === 'listening' || systemState === 'speaking' ? 'animate-[wave_1.1s_ease-in-out_infinite]' : 'h-[6px]'}`} style={{ animationDelay: `${Math.random() * 1.1}s` }} />
+               ))}
             </div>
             
-            <div className="w-full flex w-full gap-2 items-end justify-center h-full pt-4">
+            <div className="flex gap-2 items-center">
               <button
-                id="jarvis-mic-btn-main"
                 onClick={toggleRecording}
                 disabled={isLoading}
-                className={`transition-all rounded-full w-14 h-14 flex items-center justify-center flex-shrink-0 text-xl border border-red-900/50 bg-[#050505]
+                className={`w-[38px] h-[38px] rounded-full border border-jarvis-crimson flex items-center justify-center shrink-0 transition-all text-sm
                   ${isListeningContinuous 
-                    ? 'border-cyan-500 text-cyan-400 animate-pulse shadow-[0_0_15px_rgba(34,211,238,0.3)]' 
-                    : 'text-red-500 hover:text-red-300 hover:bg-red-950 transition-colors'}`}
-                title="Continuous Voice Input"
+                    ? 'bg-jarvis-crimson text-[#0a0a0a]' 
+                    : 'bg-jarvis-crimson/10 text-jarvis-crimson hover:bg-jarvis-crimson hover:text-[#0a0a0a]'}`}
               >
-                🎤
+                ●
               </button>
               
-              <div className="flex-grow flex flex-col h-14">
-                <input
-                  id="jarvis-command-input-main"
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={isLoading}
-                  className="w-full h-full bg-[#050505] border border-red-900/50 rounded outline-none text-red-400 placeholder-red-900/70 disabled:opacity-50 px-3 text-sm focus:border-red-700 transition-colors"
-                  placeholder={isListeningContinuous ? 'Listening... (Speak or type)' : isLoading ? 'Awaiting response...' : 'Type instruction...'}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </div>
-
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={isLoading}
+                className="flex-grow bg-white/5 border border-white/10 text-jarvis-text font-mono text-xs px-3 py-2 rounded-sm focus:outline-none focus:border-jarvis-crimson"
+                placeholder={isListeningContinuous ? 'Listening... (Speak or type)' : isLoading ? 'Awaiting response...' : 'Enter command or speak to JARVIS...'}
+                autoComplete="off"
+                spellCheck={false}
+              />
               <button
-                id="jarvis-send-btn-main"
                 onClick={handleSend}
                 disabled={isLoading || !input.trim()}
-                className="h-14 px-4 bg-[#050505] border border-red-900/50 rounded text-red-500 hover:text-red-400 hover:bg-red-950 disabled:opacity-30 transition-colors text-[10px] font-bold tracking-widest uppercase shadow-[0_0_10px_rgba(220,38,38,0.05)]"
+                className="hidden" // Hiding the button, relying on Enter key for minimalist look like the mockup, but could keep it.
               >
                 SEND
               </button>
             </div>
           </div>
-
         </div>
+
       </div>
     </div>
   );

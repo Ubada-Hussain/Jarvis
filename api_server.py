@@ -18,7 +18,9 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 if sys.stderr.encoding and sys.stderr.encoding.lower() != "utf-8":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from typing import List
+import asyncio
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -71,6 +73,40 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 from core.tts_engine import generate_audio
 from core.stt_engine import transcribe_audio
 
+# ─── WebSocket State Manager ───────────────────────────────────────────────────
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+        self.current_state = "idle"
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        await websocket.send_text(self.current_state)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, state: str):
+        self.current_state = state
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(state)
+            except Exception:
+                pass
+
+ws_manager = ConnectionManager()
+
+# Helper function to fire and forget async broadcast from sync code if needed, 
+# but FastAPI routes can just use await.
+def broadcast_state_sync(state: str):
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(ws_manager.broadcast(state))
+    except RuntimeError:
+        pass
+
 # ─── Request / Response Models ────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
@@ -91,6 +127,15 @@ class ApprovalRespondRequest(BaseModel):
     approved: bool
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
+
+@app.websocket("/api/ws/state")
+async def websocket_endpoint(websocket: WebSocket):
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
 
 @app.get("/api/approval/status", tags=["Approval"])
 async def approval_status():
@@ -120,9 +165,11 @@ async def transcribe(file: UploadFile = File(...)):
     """
     temp_path = os.path.join(AUDIO_DIR, f"temp_{file.filename}")
     try:
+        broadcast_state_sync("listening")
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
+        broadcast_state_sync("thinking")
         transcription = transcribe_audio(temp_path)
         return {"text": transcription}
     except Exception as e:
@@ -142,6 +189,8 @@ def chat(request: ChatRequest):
     """
     if not request.message or not request.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
+
+    broadcast_state_sync("thinking")
 
     try:
         response_text = _master_agent.execute(request.message.strip())
@@ -163,10 +212,15 @@ def chat(request: ChatRequest):
                 lang = "en"
                 
         # Generate Audio
+        broadcast_state_sync("speaking")
         audio_url = generate_audio(response_text, language=lang)
+        
+        # Will return to idle after audio plays via frontend logic, or we could delay it here
+        # But frontend is better positioned to know when audio finishes.
         
         return ChatResponse(response=response_text, audio_url=audio_url)
     except Exception as e:
+        broadcast_state_sync("idle")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Agent error: {str(e)}")

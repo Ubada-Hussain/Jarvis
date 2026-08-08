@@ -21,8 +21,10 @@ export interface Message {
 }
 
 export type ConnectionStatus = 'unknown' | 'online' | 'offline';
+export type SystemState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
 const API_BASE = '/api';  // Proxied to http://localhost:8000 by Vite
+const WS_BASE = `ws://${window.location.host}/api/ws/state`;
 
 export function useJarvis() {
   const [messages, setMessages] = useState<Message[]>([
@@ -36,6 +38,7 @@ export function useJarvis() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [status, setStatus] = useState<ConnectionStatus>('unknown');
+  const [systemState, setSystemState] = useState<SystemState>('idle');
 
   const addMessage = useCallback((role: MessageRole, content: string) => {
     setMessages((prev) => [
@@ -62,6 +65,25 @@ export function useJarvis() {
       }
     }, 1000);
     return () => clearInterval(interval);
+  }, []);
+
+  // WebSocket for System State
+  useEffect(() => {
+    let ws: WebSocket;
+    const connectWS = () => {
+      ws = new WebSocket(WS_BASE);
+      ws.onmessage = (event) => {
+        const newState = event.data as SystemState;
+        setSystemState(newState);
+      };
+      ws.onclose = () => {
+        setTimeout(connectWS, 2000); // Reconnect loop
+      };
+    };
+    connectWS();
+    return () => {
+      if (ws) ws.close();
+    };
   }, []);
 
   const respondToApproval = useCallback(async (approved: boolean) => {
@@ -247,7 +269,10 @@ export function useJarvis() {
         });
         audio.onended = () => {
           setIsSpeaking(false);
+          setSystemState('idle'); // Backend sets to speaking, we revert to idle when audio finishes
         };
+      } else {
+        setSystemState('idle'); // Revert to idle if no audio
       }
       
     } catch (err: unknown) {
@@ -323,6 +348,7 @@ export function useJarvis() {
     toggleContinuousListening, 
     pendingAction, 
     respondToApproval,
+    systemState,
     jarvisState
   };
 }

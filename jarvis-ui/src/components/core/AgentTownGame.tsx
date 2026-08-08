@@ -1,157 +1,81 @@
-import React, { useEffect, useRef } from 'react';
-import Phaser from 'phaser';
+import React from 'react';
 
 interface AgentTownGameProps {
   agentStates: Record<string, string>;
 }
 
 const AgentTownGame: React.FC<AgentTownGameProps> = ({ agentStates }) => {
-  const gameRef = useRef<HTMLDivElement>(null);
-  const phaserGame = useRef<Phaser.Game | null>(null);
+  const getAgentStyle = (id: string) => {
+    const isBusy = agentStates[id] === 'busy' || agentStates[id] === 'working';
+    
+    // Default positions (corners)
+    let top = '14px';
+    let left = '20px';
+    
+    if (id === 'DEV') { top = '14px'; left = '20px'; }
+    if (id === 'SYS') { top = '14px'; left = 'calc(100% - 60px)'; }
+    if (id === 'ACAD') { top = 'calc(100% - 40px)'; left = '20px'; }
+    if (id === 'OBS') { top = 'calc(100% - 40px)'; left = 'calc(100% - 60px)'; }
 
-  useEffect(() => {
-    if (!gameRef.current || phaserGame.current) return;
-
-    class MainScene extends Phaser.Scene {
-      agents: Record<string, Phaser.GameObjects.Arc & { roleId?: string }> = {};
-      deskLabels: Record<string, Phaser.GameObjects.Text> = {};
-      desks: Record<string, {x: number, y: number}> = {
-        'DEV': { x: 60, y: 60 },
-        'SYS': { x: 340, y: 60 },
-        'ACAD': { x: 60, y: 240 },
-        'OBS': { x: 340, y: 240 },
-      };
-      center = { x: 200, y: 150 };
-
-      constructor() {
-        super('MainScene');
-      }
-
-      create() {
-        // Floor
-        this.add.rectangle(200, 150, 400, 300, 0x111111);
-        
-        // Grid lines for office feel
-        const graphics = this.add.graphics();
-        graphics.lineStyle(1, 0x333333, 0.5);
-        for(let i=0; i<400; i+=20) { graphics.moveTo(i,0); graphics.lineTo(i,300); }
-        for(let i=0; i<300; i+=20) { graphics.moveTo(0,i); graphics.lineTo(400,i); }
-        graphics.strokePath();
-
-        // Central Server (Task Core)
-        const core = this.add.rectangle(this.center.x, this.center.y, 60, 40, 0x000000).setStrokeStyle(2, 0xef4444);
-        const coreText = this.add.text(this.center.x, this.center.y - 35, 'TASK\nCORE', { fontSize: '10px', color: '#ef4444', align: 'center' }).setOrigin(0.5);
-        coreText.setDepth(20); // ensure it is always above agents
-        
-        // Pulsing core effect
-        this.tweens.add({
-          targets: core,
-          alpha: 0.5,
-          duration: 1000,
-          yoyo: true,
-          repeat: -1
-        });
-
-        // Desks and Agents
-        const colors: Record<string, number> = {
-          'DEV': 0x06b6d4, // Cyan
-          'SYS': 0xef4444, // Red
-          'ACAD': 0x22c55e, // Green
-          'OBS': 0xa855f7  // Purple
-        };
-
-        for (const [id, pos] of Object.entries(this.desks)) {
-          // Desk
-          this.add.rectangle(pos.x, pos.y, 40, 30, 0x222222).setStrokeStyle(1, 0x444444);
-          const label = this.add.text(pos.x, pos.y - 25, id, { fontSize: '10px', color: '#ffffff' }).setOrigin(0.5);
-          this.deskLabels[id] = label;
-
-          // Agent (Colored Circle)
-          const agent = this.add.circle(pos.x, pos.y, 8, colors[id]);
-          agent.setDepth(10);
-          this.agents[id] = agent;
-        }
-
-        // Expose update function to React
-        this.events.on('updateAgentState', this.handleStateChange, this);
-      }
-
-      handleStateChange(states: Record<string, string>) {
-        for (const [id, state] of Object.entries(states)) {
-          const agent = this.agents[id];
-          const label = this.deskLabels[id];
-          if (!agent || !label) continue;
-          
-          const isBusy = state === 'busy' || state === 'working';
-          const target = isBusy ? this.center : this.desks[id];
-          
-          // Update desk label indicator
-          if (isBusy) {
-            label.setText(`${id} [AWAY]`);
-            label.setColor('#888888');
-          } else {
-            label.setText(id);
-            label.setColor('#ffffff');
-          }
-          
-          // Move if not already at target
-          // Using distance check because tweens add slight random offsets
-          const dist = Phaser.Math.Distance.Between(agent.x, agent.y, target.x, target.y);
-          
-          if (dist > 15) {
-            // Check if tween already exists to avoid restarting
-            const tweens = this.tweens.getTweensOf(agent);
-            if (tweens.length === 0) {
-              const offsetX = isBusy ? (Math.random() * 40 - 20) : 0;
-              const offsetY = isBusy ? (Math.random() * 40 - 20) : 0;
-              
-              this.tweens.add({
-                targets: agent,
-                x: target.x + offsetX,
-                y: target.y + offsetY,
-                duration: 800,
-                ease: 'Power2'
-              });
-            }
-          }
-        }
-      }
+    // If busy, move near the TASK CORE center
+    if (isBusy) {
+       // Add slight random offset based on ID so they don't exactly overlap
+       const offset = id === 'DEV' ? -10 : id === 'SYS' ? 10 : id === 'ACAD' ? -20 : 20;
+       top = `calc(50% + ${offset}px)`;
+       left = `calc(50% + ${offset/2}px)`;
     }
 
-    const config: Phaser.Types.Core.GameConfig = {
-      type: Phaser.AUTO,
-      width: 400,
-      height: 300,
-      parent: gameRef.current,
-      backgroundColor: '#050505',
-      scene: [MainScene]
-    };
+    return { top, left };
+  };
 
-    phaserGame.current = new Phaser.Game(config);
-
-    return () => {
-      phaserGame.current?.destroy(true);
-      phaserGame.current = null;
-    };
-  }, []);
-
-  // Sync state changes from React into Phaser
-  useEffect(() => {
-    if (phaserGame.current) {
-      const scene = phaserGame.current.scene.getScene('MainScene');
-      if (scene) {
-        scene.events.emit('updateAgentState', agentStates);
-      }
+  const getAgentColorClass = (id: string) => {
+    switch(id) {
+      case 'DEV': return 'text-jarvis-cyan';
+      case 'SYS': return 'text-jarvis-crimson';
+      case 'ACAD': return 'text-[#39d98a]'; // Green
+      case 'OBS': return 'text-[#b585ff]'; // Purple
+      default: return 'text-white';
     }
-  }, [agentStates]);
+  };
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center bg-[#050505] rounded-b-lg">
+    <div className="w-full h-full p-4 pt-10 flex flex-col relative overflow-hidden">
+      
+      {/* Grid Background */}
       <div 
-        ref={gameRef} 
-        className="rounded-lg overflow-hidden border border-red-900/50 shadow-[0_0_20px_rgba(220,38,38,0.2)]"
-        style={{ width: '400px', height: '300px' }} 
+        className="absolute inset-0 z-0 opacity-50"
+        style={{
+          backgroundImage: 'linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px)',
+          backgroundSize: '24px 24px',
+          backgroundPosition: 'center center'
+        }}
       />
+
+      <div className="relative w-full flex-grow border border-white/5 bg-black/20 z-10">
+        
+        {/* TASK CORE */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-11 border border-jarvis-crimson bg-black/50 flex items-center justify-center text-[8px] tracking-[1px] text-jarvis-crimson text-center leading-snug z-10 shadow-[0_0_10px_rgba(255,59,78,0.2)]">
+          TASK<br/>CORE
+        </div>
+
+        {/* AGENTS */}
+        {Object.keys(agentStates).map(id => {
+          const isBusy = agentStates[id] === 'busy' || agentStates[id] === 'working';
+          return (
+            <div 
+              key={id} 
+              className={`absolute flex flex-col items-center gap-1.5 transition-all duration-1000 ease-[cubic-bezier(.4,0,.2,1)] z-20 ${getAgentColorClass(id)}`}
+              style={getAgentStyle(id)}
+            >
+              <div className="w-[22px] h-[22px] rounded-full bg-current shadow-[0_0_14px_currentColor] opacity-90" />
+              <div className={`text-[10px] tracking-[1.5px] font-mono whitespace-nowrap ${isBusy ? 'text-jarvis-amber' : 'text-jarvis-text-dim'}`}>
+                {id} {isBusy ? '[AWAY]' : ''}
+              </div>
+            </div>
+          );
+        })}
+
+      </div>
     </div>
   );
 };
