@@ -29,6 +29,10 @@ const DashboardLayout: React.FC = () => {
     if (e.key === 'Enter') handleSend();
   };
 
+  const toggleRecording = () => {
+    toggleContinuousListening();
+  };
+
   const statusColor = status === 'online' ? 'bg-jarvis-cyan shadow-[0_0_8px_#2dd4ea]' : status === 'offline' ? 'bg-jarvis-crimson' : 'bg-jarvis-amber';
   const statusLabel = status === 'online' ? 'BACKEND ONLINE' : status === 'offline' ? 'BACKEND OFFLINE' : 'CONNECTING...';
 
