@@ -1,4 +1,5 @@
-import React, { KeyboardEvent } from 'react';
+import React from 'react';
+import type { KeyboardEvent } from 'react';
 import { Panel } from './Panel';
 
 interface StonicAIPanelProps {

@@ -1,42 +1,108 @@
-import React from 'react';
-import { Terminal, BrainCircuit, BookOpen, Eye } from 'lucide-react';
-
-interface AgentDeskProps {
-  name: string;
-  role: string;
-  icon: React.ReactNode;
-  status: 'idle' | 'busy' | 'offline';
-}
-
-const AgentDesk: React.FC<AgentDeskProps> = ({ name, role, icon, status }) => {
-  const statusColor = 
-    status === 'idle' ? 'bg-cyan-500 shadow-[0_0_8px_#06b6d4]' :
-    status === 'busy' ? 'bg-red-500 shadow-[0_0_12px_#ef4444] animate-pulse' :
-    'bg-gray-600';
-
-  return (
-    <div className="relative group p-4 bg-gray-950/80 border border-red-900/30 rounded-lg flex flex-col items-center justify-center gap-2 hover:bg-gray-900 hover:border-red-700/50 transition-all duration-300">
-      <div className={`absolute top-2 right-2 w-2 h-2 rounded-full ${statusColor}`} />
-      <div className="p-3 bg-gray-900 rounded-full border border-red-900/50 group-hover:border-cyan-700/50 transition-colors text-red-500 group-hover:text-cyan-400">
-        {icon}
-      </div>
-      <div className="text-center">
-        <h4 className="text-xs font-bold text-gray-200 tracking-widest">{name}</h4>
-        <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">{role}</p>
-      </div>
-    </div>
-  );
-};
+import React, { useEffect, useRef } from 'react';
+import Phaser from 'phaser';
 
 const AgentTown: React.FC = () => {
+  const gameRef = useRef<HTMLDivElement>(null);
+  const gameInstance = useRef<Phaser.Game | null>(null);
+
+  useEffect(() => {
+    if (!gameRef.current) return;
+
+    const config: Phaser.Types.Core.GameConfig = {
+      type: Phaser.AUTO,
+      width: '100%',
+      height: '100%',
+      parent: gameRef.current,
+      backgroundColor: '#050505',
+      scene: {
+        preload: preload,
+        create: create,
+        update: update
+      },
+      scale: {
+        mode: Phaser.Scale.RESIZE,
+        autoCenter: Phaser.Scale.CENTER_BOTH
+      }
+    };
+
+    gameInstance.current = new Phaser.Game(config);
+
+    function preload(this: Phaser.Scene) {
+      // Phase G2: Load assets
+      this.load.image('agent', '/assets/agent_base.png');
+    }
+
+    function create(this: Phaser.Scene) {
+      const width = this.cameras.main.width;
+      const height = this.cameras.main.height;
+
+      // Draw Gaming Room (Left)
+      const gamingRoom = this.add.rectangle(width * 0.25, height / 2, width / 2, height, 0x11111b);
+      gamingRoom.setStrokeStyle(2, 0x06b6d4, 0.3); // Cyan neon border
+
+      // Draw Office Room (Right)
+      const officeRoom = this.add.rectangle(width * 0.75, height / 2, width / 2, height, 0x1a1a24);
+      officeRoom.setStrokeStyle(2, 0xef4444, 0.3); // Red neon border
+
+      // Room Labels
+      this.add.text(20, 20, 'GAMING LOUNGE (IDLE)', { 
+        fontFamily: 'monospace', 
+        fontSize: '12px', 
+        color: '#06b6d4' 
+      }).setAlpha(0.6);
+
+      this.add.text(width / 2 + 20, 20, 'OPERATIONS OFFICE (WORKING)', { 
+        fontFamily: 'monospace', 
+        fontSize: '12px', 
+        color: '#ef4444' 
+      }).setAlpha(0.6);
+
+      // Simple divider
+      this.add.line(0, 0, width / 2, 0, width / 2, height, 0xffffff, 0.1).setOrigin(0);
+
+      // --- PHASE G2: Static Character Rendering ---
+      // Scale down if the image is too large (assuming 512x512 generated image)
+      const spriteScale = 0.1; 
+      const startX = width * 0.15;
+      const startY = height * 0.4;
+      const spacing = 60;
+
+      // DEV (Red)
+      const devSprite = this.add.sprite(startX, startY, 'agent').setScale(spriteScale);
+      devSprite.setTint(0xff4444);
+      this.add.text(startX, startY - 30, 'DEV', { fontSize: '10px', color: '#ff4444' }).setOrigin(0.5);
+
+      // SYS (Cyan)
+      const sysSprite = this.add.sprite(startX + spacing, startY, 'agent').setScale(spriteScale);
+      sysSprite.setTint(0x44ffff);
+      this.add.text(startX + spacing, startY - 30, 'SYS', { fontSize: '10px', color: '#44ffff' }).setOrigin(0.5);
+
+      // ACAD (Green)
+      const acadSprite = this.add.sprite(startX, startY + spacing, 'agent').setScale(spriteScale);
+      acadSprite.setTint(0x44ff44);
+      this.add.text(startX, startY + spacing - 30, 'ACAD', { fontSize: '10px', color: '#44ff44' }).setOrigin(0.5);
+
+      // OBS (Amber)
+      const obsSprite = this.add.sprite(startX + spacing, startY + spacing, 'agent').setScale(spriteScale);
+      obsSprite.setTint(0xffb347);
+      this.add.text(startX + spacing, startY + spacing - 30, 'OBS', { fontSize: '10px', color: '#ffb347' }).setOrigin(0.5);
+    }
+
+    function update(this: Phaser.Scene) {
+      // Phase G1: Game loop
+    }
+
+    return () => {
+      if (gameInstance.current) {
+        gameInstance.current.destroy(true);
+        gameInstance.current = null;
+      }
+    };
+  }, []);
+
   return (
-    <div className="w-full h-full p-4 bg-[#050505] rounded-b-lg overflow-hidden flex items-center justify-center">
-      <div className="grid grid-cols-2 gap-4 w-full h-full">
-        <AgentDesk name="DEV" role="System Builder" icon={<Terminal size={20} />} status="idle" />
-        <AgentDesk name="SYS" role="Orchestrator" icon={<BrainCircuit size={20} />} status="busy" />
-        <AgentDesk name="ACAD" role="Research" icon={<BookOpen size={20} />} status="offline" />
-        <AgentDesk name="OBS" role="Oversight" icon={<Eye size={20} />} status="idle" />
-      </div>
+    <div className="w-full h-full bg-[#050505] rounded-b-lg overflow-hidden">
+      <div ref={gameRef} className="w-full h-full" />
     </div>
   );
 };

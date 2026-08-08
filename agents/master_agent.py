@@ -242,5 +242,5 @@ class MasterAgent(BaseAgent):
         
         return self.llm.generate_response(
             prompt=prompt,
-            system_prompt="You are JARVIS. Summarize the parallel agent results naturally."
+            system_prompt="You are JARVIS. Keep responses brief, crisp, confident, and slightly witty (Iron Man style). 1-3 sentences typically. Avoid formal, corporate AI language."
         )

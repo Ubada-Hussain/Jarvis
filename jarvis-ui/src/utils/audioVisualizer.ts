@@ -87,7 +87,7 @@ export class AudioVisualizer {
 
   public getMicAmplitude(): number {
     if (!this.micAnalyser || !this.micDataArray) return 0;
-    this.micAnalyser.getByteFrequencyData(this.micDataArray);
+    this.micAnalyser.getByteFrequencyData(this.micDataArray as any);
     let sum = 0;
     for (let i = 0; i < this.micDataArray.length; i++) sum += this.micDataArray[i];
     return sum / this.micDataArray.length / 255.0;
@@ -95,7 +95,7 @@ export class AudioVisualizer {
 
   public getTTSAmplitude(): number {
     if (!this.ttsAnalyser || !this.ttsDataArray) return 0;
-    this.ttsAnalyser.getByteFrequencyData(this.ttsDataArray);
+    this.ttsAnalyser.getByteFrequencyData(this.ttsDataArray as any);
     let sum = 0;
     for (let i = 0; i < this.ttsDataArray.length; i++) sum += this.ttsDataArray[i];
     return sum / this.ttsDataArray.length / 255.0;

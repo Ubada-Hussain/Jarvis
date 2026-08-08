@@ -19,7 +19,11 @@ class SystemAgent(BaseAgent):
             "CRITICAL RULE: DO NOT use any tools for simple greetings or casual chit-chat. Only use tools when explicitly asked to perform an action on the computer like open an app, check RAM/CPU, or open a folder. Never describe manual steps."
         )
 
-        from core.tools import OPEN_FILE_EXPLORER_TOOL, open_file_explorer, SEARCH_INTERNET_TOOL, search_internet
+        from core.tools import (
+            OPEN_FILE_EXPLORER_TOOL, open_file_explorer, 
+            SEARCH_INTERNET_TOOL, search_internet,
+            SWITCH_VOICE_PROFILE_TOOL, switch_voice_profile
+        )
         from core.system_tools import (
             CHECK_SYSTEM_HEALTH_TOOL, check_system_health,
             LAUNCH_APP_TOOL, launch_app,
@@ -44,14 +48,16 @@ class SystemAgent(BaseAgent):
                 CHECK_SYSTEM_HEALTH_TOOL,
                 LAUNCH_APP_TOOL,
                 SEARCH_INTERNET_TOOL,
-                DELETE_FILE_TOOL
+                DELETE_FILE_TOOL,
+                SWITCH_VOICE_PROFILE_TOOL
             ],
             tool_logic={
                 "open_file_explorer": open_file_explorer,
                 "check_system_health": check_system_health,
                 "launch_app": _launch_app_wrapper,
                 "search_internet": search_internet,
-                "delete_file": _delete_file_wrapper
+                "delete_file": _delete_file_wrapper,
+                "switch_voice_profile": switch_voice_profile
             }
         )
         

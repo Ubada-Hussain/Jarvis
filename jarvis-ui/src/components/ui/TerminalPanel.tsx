@@ -37,7 +37,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ messages, isLoadin
       {/* Terminal Content */}
       <div className="p-4 h-full overflow-y-auto bg-[#0a0a0a] text-xs font-mono">
         <div className="space-y-4 pb-12">
-          {messages.map((msg, idx) => (
+          {messages.map((msg) => (
             <div key={msg.id} className="opacity-80 hover:opacity-100 transition-opacity">
               {msg.role === 'user' && (
                 <div className="mb-1">

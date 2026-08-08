@@ -212,3 +212,36 @@ REMEMBER_FILE_TOOL = {
         }
     }
 }
+
+def switch_voice_profile(profile_name: str) -> str:
+    """
+    Switches the TTS voice profile for the session.
+    """
+    try:
+        from core.tts_engine import set_voice_profile
+        success = set_voice_profile(profile_name)
+        if success:
+            return f"Successfully switched voice profile to '{profile_name}'."
+        else:
+            return f"Failed: '{profile_name}' is not a valid profile. Valid profiles are: default, young_man, young_woman, old_man, old_woman, kid, flirty."
+    except Exception as e:
+        return f"Error switching voice profile: {str(e)}"
+
+SWITCH_VOICE_PROFILE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "switch_voice_profile",
+        "description": "Switches the voice profile of JARVIS. Use this when the user asks you to change your voice (e.g. 'talk like an old man', 'use flirty voice', 'change voice to kid').",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "profile_name": {
+                    "type": "string",
+                    "enum": ["default", "young_man", "young_woman", "old_man", "old_woman", "kid", "flirty"],
+                    "description": "The name of the voice profile to switch to."
+                }
+            },
+            "required": ["profile_name"]
+        }
+    }
+}

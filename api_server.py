@@ -32,20 +32,17 @@ from contextlib import asynccontextmanager
 import json
 
 _wake_word_listener = None
+main_loop = None
 
 def handle_wake_word():
-    # Broadcast custom JSON to trigger mic
     message = json.dumps({"type": "wake_word"})
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(ws_manager.broadcast(message))
-    except RuntimeError:
-        pass
+    if main_loop and main_loop.is_running():
+        asyncio.run_coroutine_threadsafe(ws_manager.broadcast(message), main_loop)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    global _wake_word_listener
+    global _wake_word_listener, main_loop
+    main_loop = asyncio.get_running_loop()
     try:
         from io_manager.voice_listener import WakeWordListener
         _wake_word_listener = WakeWordListener(on_wake_word_detected=handle_wake_word)
@@ -53,7 +50,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Wake word listener failed to start: {e}")
     yield
-    # Shutdown
     if _wake_word_listener:
         _wake_word_listener.stop()
 
@@ -157,11 +153,8 @@ agent_ws_manager = AgentStatusManager()
 
 def _on_agent_status_change(status_dict: dict):
     """Called from MasterAgent threads when an agent's status changes."""
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(agent_ws_manager.broadcast(status_dict))
-    except RuntimeError:
-        pass
+    if main_loop and main_loop.is_running():
+        asyncio.run_coroutine_threadsafe(agent_ws_manager.broadcast(status_dict), main_loop)
 
 # Register callback so MasterAgent can push status changes
 from agents.master_agent import set_agent_status_callback
@@ -170,11 +163,8 @@ set_agent_status_callback(_on_agent_status_change)
 # Helper function to fire and forget async broadcast from sync code if needed, 
 # but FastAPI routes can just use await.
 def broadcast_state_sync(state: str):
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(ws_manager.broadcast(state))
-    except RuntimeError:
-        pass
+    if main_loop and main_loop.is_running():
+        asyncio.run_coroutine_threadsafe(ws_manager.broadcast(state), main_loop)
 
 # ─── Request / Response Models ────────────────────────────────────────────────
 
