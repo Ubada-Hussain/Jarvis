@@ -223,9 +223,67 @@ class SQLiteAuditLogger:
                         list(msg_dict.values())
                     )
                     conn.commit()
+    def log_recovery_event(
+        self,
+        task_id: str,
+        node_id: str,
+        agent: str,
+        attempt: int,
+        failure_category: str,
+        recovery_action: str,
+        reason: str,
+        outcome: str = "PENDING",
+        metadata: Dict[str, Any] = None
+    ) -> bool:
+        """
+        Persists a recovery decision or retry attempt to the audit log.
+        """
+        try:
+            event_id = str(uuid.uuid4())
+            timestamp = datetime.utcnow().isoformat() + "Z"
+            meta_json = json.dumps(metadata or {})
+            
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        INSERT INTO recovery_events 
+                        (event_id, timestamp, task_id, node_id, agent, attempt, failure_category, recovery_action, reason, outcome, metadata)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (event_id, timestamp, task_id, node_id, agent, attempt, failure_category, recovery_action, reason, outcome, meta_json))
+                    conn.commit()
                 finally:
                     conn.close()
             return True
         except Exception as e:
-            print(f"\n[CRITICAL AUDIT FAILURE] Failed to write A2A message '{message.message_id}'. Reason: {e}")
+            print(f"\n[CRITICAL AUDIT FAILURE] Failed to write recovery event for node '{node_id}'. Reason: {e}")
             return False
+
+    def query_recovery_events(self, task_id: Optional[str] = None, node_id: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+        """Queries recovery events."""
+        try:
+            query = "SELECT * FROM recovery_events WHERE 1=1"
+            params = []
+            if task_id:
+                query += " AND task_id = ?"
+                params.append(task_id)
+            if node_id:
+                query += " AND node_id = ?"
+                params.append(node_id)
+            query += " ORDER BY timestamp ASC LIMIT ?"
+            params.append(limit)
+            
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    cursor.execute(query, params)
+                    rows = cursor.fetchall()
+                    return [dict(row) for row in rows]
+                finally:
+                    conn.close()
+        except Exception as e:
+            print(f"[AUDIT QUERY RECOVERY ERROR] {e}")
+            return []

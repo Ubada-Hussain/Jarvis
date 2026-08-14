@@ -8,11 +8,13 @@ from core.memory_manager import MemoryManager
 from core.memory_models import EpisodicMemory
 import uuid
 
+from core.recovery import RecoveryManager, FailureCategory, RecoveryAction, RetryPolicy
+
 class DependencyScheduler:
     """
     Executes a TaskGraph by respecting dependencies.
     Dispatches safe tasks in parallel.
-    Uses Audit Logger to determine VerificationStatus-driven completion.
+    Uses Audit Logger and RecoveryManager to determine VerificationStatus-driven completion and safe retries.
     """
     def __init__(self, agents_dict: Dict[str, Any], audit_logger):
         self.agents = agents_dict
@@ -23,6 +25,7 @@ class DependencyScheduler:
         
         self.a2a_dispatcher = A2ADispatcher(self.agents, self.audit_logger)
         self.memory_manager = MemoryManager()
+        self.recovery_manager = RecoveryManager(default_max_retries=2)
 
     def execute_graph(self, graph: TaskGraph) -> str:
         """
@@ -44,7 +47,10 @@ class DependencyScheduler:
                 ready_nodes = [n for n in graph.nodes.values() if n.status == TaskState.READY]
                 
                 # Check for termination
-                active_count = len([n for n in graph.nodes.values() if n.status in (TaskState.READY, TaskState.RUNNING, TaskState.WAITING_FOR_CONFIRMATION, TaskState.WAITING_FOR_DEPENDENCY)])
+                active_count = len([n for n in graph.nodes.values() if n.status in (
+                    TaskState.READY, TaskState.RUNNING, TaskState.RETRYING, TaskState.RECOVERING,
+                    TaskState.WAITING_FOR_CONFIRMATION, TaskState.WAITING_FOR_DEPENDENCY
+                )])
                 if active_count == 0:
                     break
                     
@@ -84,13 +90,16 @@ class DependencyScheduler:
             if node.status == TaskState.COMPLETED and node.verification_status == "VERIFIED_SUCCESS":
                 events = self.audit_logger.query_events(task_id=node.node_id)
                 evidence = "; ".join([e.get("evidence", "") for e in events if e.get("evidence")])
+                tags = ["task_graph", "verified"]
+                if node.attempts > 1:
+                    tags.append("recovered")
                 mem = EpisodicMemory(
                     task_id=node.node_id,
                     summary=f"Agent {node.agent} completed: {node.description}",
                     outcome=node.result if node.result else "Success",
                     evidence_reference=evidence[:1000] if evidence else "Audit Log",
                     agents_involved=[node.agent],
-                    tags=["task_graph", "verified"]
+                    tags=tags
                 )
                 self.memory_manager.save_episodic_memory(mem)
                 
@@ -102,7 +111,7 @@ class DependencyScheduler:
                     outcome=node.error if node.error else "Failure",
                     evidence_reference="Audit Log",
                     agents_involved=[node.agent],
-                    tags=["task_graph", "verified", "failure"]
+                    tags=["task_graph", "verified", "failure", "persistent"]
                 )
                 self.memory_manager.save_episodic_memory(mem)
 
@@ -129,52 +138,152 @@ class DependencyScheduler:
                     node.status = TaskState.WAITING_FOR_DEPENDENCY
 
     def _execute_node(self, node: TaskNode, graph_id: str):
-        """Thread worker that executes a specific node via A2A protocol."""
+        """Thread worker that executes a specific node with Verification-First Recovery Policy."""
         agent_name = node.agent
+        max_retries = node.max_retries or 2
         
-        observability_manager.emit_event(ObservabilityEvent(
-            task_id=graph_id,
-            event_type="NODE_STARTED",
-            agent=agent_name,
-            metadata={"node_id": node.node_id, "description": node.description}
-        ))
-        
-        req_msg = AgentMessage(
-            message_id=str(uuid.uuid4()),
-            task_id=graph_id,
-            node_id=node.node_id,
-            sender_agent="Scheduler",
-            recipient_agent=agent_name,
-            message_type=MessageType.TASK_REQUEST,
-            status=AgentStatus.PENDING,
-            result=node.description
-        )
-        
-        try:
-            # The A2A Dispatcher handles the native execution, evidence extraction, 
-            # and returns a final TASK_RESULT/TASK_FAILED message.
-            resp_msg = self.a2a_dispatcher.dispatch(req_msg)
+        while node.attempts < max_retries:
+            node.attempts += 1
+            is_retry = (node.attempts > 1)
             
-            node.result = resp_msg.result
+            if is_retry:
+                node.status = TaskState.RETRYING
+                observability_manager.emit_event(ObservabilityEvent(
+                    task_id=graph_id,
+                    event_type="RETRY_STARTED",
+                    agent=agent_name,
+                    metadata={"node_id": node.node_id, "attempt": node.attempts, "max_retries": max_retries}
+                ))
+            else:
+                observability_manager.emit_event(ObservabilityEvent(
+                    task_id=graph_id,
+                    event_type="NODE_STARTED",
+                    agent=agent_name,
+                    metadata={"node_id": node.node_id, "description": node.description}
+                ))
             
-            # Map AgentStatus to TaskState
-            if resp_msg.status == AgentStatus.COMPLETED:
-                node.status = TaskState.COMPLETED
-                node.verification_status = "VERIFIED_SUCCESS"
-            elif resp_msg.status == AgentStatus.FAILED:
+            req_msg = AgentMessage(
+                message_id=str(uuid.uuid4()),
+                task_id=graph_id,
+                node_id=node.node_id,
+                sender_agent="Scheduler",
+                recipient_agent=agent_name,
+                message_type=MessageType.TASK_RETRYING if is_retry else MessageType.TASK_REQUEST,
+                status=AgentStatus.RETRYING if is_retry else AgentStatus.PENDING,
+                result=node.description,
+                attempt=node.attempts
+            )
+            
+            try:
+                # Dispatch execution to target agent
+                resp_msg = self.a2a_dispatcher.dispatch(req_msg)
+                node.result = resp_msg.result
+                
+                # Check if successful execution verified
+                if resp_msg.status == AgentStatus.COMPLETED:
+                    node.status = TaskState.COMPLETED
+                    node.verification_status = "VERIFIED_SUCCESS"
+                    node.error = ""
+                    
+                    if is_retry:
+                        self.audit_logger.log_recovery_event(
+                            task_id=graph_id,
+                            node_id=node.node_id,
+                            agent=agent_name,
+                            attempt=node.attempts,
+                            failure_category=node.failure_category or "NONE",
+                            recovery_action="RETRY_SUCCESS",
+                            reason=f"Recovered successfully on attempt {node.attempts}.",
+                            outcome="VERIFIED_SUCCESS"
+                        )
+                        observability_manager.emit_event(ObservabilityEvent(
+                            task_id=graph_id,
+                            event_type="RETRY_COMPLETED",
+                            agent=agent_name,
+                            status="COMPLETED",
+                            metadata={"node_id": node.node_id, "attempt": node.attempts}
+                        ))
+                    break
+                    
+                else:
+                    # Failure encountered — classify and determine recovery action
+                    error_msg = str([e.message for e in resp_msg.errors]) if resp_msg.errors else (node.result or "Task failed")
+                    error_code = resp_msg.errors[0].code if resp_msg.errors else "UNKNOWN"
+                    permission_status = "DENIED" if resp_msg.status == AgentStatus.BLOCKED or "PERMISSION_DENIED" in error_code else "GRANTED"
+                    
+                    category = self.recovery_manager.classify_failure(
+                        error_code=error_code,
+                        error_msg=error_msg,
+                        verification_status="VERIFIED_FAILURE" if resp_msg.status == AgentStatus.FAILED else "UNVERIFIED",
+                        permission_status=permission_status
+                    )
+                    node.failure_category = category.value
+                    
+                    decision = self.recovery_manager.evaluate_recovery(
+                        category=category,
+                        current_attempt=node.attempts,
+                        max_retries=max_retries,
+                        risk_level=node.risk_level
+                    )
+                    
+                    self.audit_logger.log_recovery_event(
+                        task_id=graph_id,
+                        node_id=node.node_id,
+                        agent=agent_name,
+                        attempt=node.attempts,
+                        failure_category=category.value,
+                        recovery_action=decision.action.value,
+                        reason=decision.reason,
+                        outcome="RETRYING" if decision.should_retry else "TERMINATED"
+                    )
+                    
+                    if decision.should_retry and node.attempts < max_retries:
+                        observability_manager.emit_event(ObservabilityEvent(
+                            task_id=graph_id,
+                            event_type="RECOVERY_STARTED",
+                            agent=agent_name,
+                            metadata={
+                                "node_id": node.node_id,
+                                "failure_category": category.value,
+                                "action": decision.action.value,
+                                "delay_s": decision.retry_delay_s
+                            }
+                        ))
+                        if decision.retry_delay_s > 0:
+                            time.sleep(decision.retry_delay_s)
+                        continue
+                    else:
+                        if resp_msg.status == AgentStatus.BLOCKED or category == FailureCategory.PERMISSION_DENIED:
+                            node.status = TaskState.BLOCKED
+                        else:
+                            node.status = TaskState.FAILED
+                        node.verification_status = "VERIFIED_FAILURE"
+                        node.error = error_msg
+                        
+                        observability_manager.emit_event(ObservabilityEvent(
+                            task_id=graph_id,
+                            event_type="RECOVERY_FAILED",
+                            agent=agent_name,
+                            status=node.status.value,
+                            error=error_msg,
+                            metadata={"node_id": node.node_id, "attempts": node.attempts}
+                        ))
+                        break
+                        
+            except Exception as e:
                 node.status = TaskState.FAILED
                 node.verification_status = "VERIFIED_FAILURE"
-                node.error = str([e.message for e in resp_msg.errors])
-            elif resp_msg.status == AgentStatus.BLOCKED:
-                node.status = TaskState.BLOCKED
-                node.error = str([e.message for e in resp_msg.errors])
-            else:
-                node.status = TaskState.FAILED
-                node.error = f"Unexpected A2A status: {resp_msg.status}"
+                node.error = f"Execution exception: {str(e)}"
+                break
                 
-        except Exception as e:
-            node.status = TaskState.FAILED
-            node.error = f"Execution exception: {str(e)}"
+        observability_manager.emit_event(ObservabilityEvent(
+            task_id=graph_id,
+            event_type="NODE_COMPLETED" if node.status == TaskState.COMPLETED else "NODE_FAILED",
+            agent=agent_name,
+            status=node.status.value,
+            error=node.error,
+            metadata={"node_id": node.node_id, "attempts": node.attempts}
+        ))
             
         observability_manager.emit_event(ObservabilityEvent(
             task_id=graph_id,
