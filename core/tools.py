@@ -1,13 +1,18 @@
 from ddgs import DDGS
+from core.verification import ToolResult, VerificationStatus
 
-def search_internet(query: str, max_results: int = 5) -> str:
+def search_internet(query: str, max_results: int = 5) -> ToolResult:
     """
     Searches the internet using DuckDuckGo and returns a formatted string of results.
     """
     try:
         results = DDGS().text(query, max_results=max_results)
         if not results:
-            return "No results found."
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_SUCCESS,
+                message="No results found.",
+                evidence="DDGS().text returned an empty list."
+            )
         
         formatted_results = []
         for i, res in enumerate(results):
@@ -16,9 +21,17 @@ def search_internet(query: str, max_results: int = 5) -> str:
             body = res.get('body', 'No Description')
             formatted_results.append(f"[{i+1}] Title: {title}\nURL: {href}\nSnippet: {body}\n")
             
-        return "\n".join(formatted_results)
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_SUCCESS,
+            message="\n".join(formatted_results),
+            evidence=f"DDGS().text returned {len(results)} results."
+        )
     except Exception as e:
-        return f"Error performing web search: {str(e)}"
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_FAILURE,
+            message=f"Error performing web search: {str(e)}",
+            evidence="Exception raised during DDGS API call."
+        )
 
 # The schema for Groq function calling
 SEARCH_INTERNET_TOOL = {
@@ -42,7 +55,7 @@ SEARCH_INTERNET_TOOL = {
 import webbrowser
 import subprocess
 
-def open_url(url: str) -> str:
+def open_url(url: str) -> ToolResult:
     """
     Opens a URL in the default system web browser.
     """
@@ -54,11 +67,23 @@ def open_url(url: str) -> str:
         print(f"[ACTION] Opening browser to: {url}")
         success = webbrowser.open(url)
         if success:
-            return f"Successfully opened {url} in the default web browser."
+            return ToolResult(
+                status=VerificationStatus.UNVERIFIED,
+                message=f"Successfully executed command to open {url} in the default web browser.",
+                evidence="webbrowser.open returned True, but external browser state cannot be verified."
+            )
         else:
-            return f"Failed to open {url} in the browser."
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_FAILURE,
+                message=f"Failed to open {url} in the browser.",
+                evidence="webbrowser.open returned False."
+            )
     except Exception as e:
-        return f"Error opening URL: {str(e)}"
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_FAILURE,
+            message=f"Error opening URL: {str(e)}",
+            evidence="Exception raised during webbrowser.open."
+        )
 
 OPEN_URL_TOOL = {
     "type": "function",
@@ -80,7 +105,7 @@ OPEN_URL_TOOL = {
 
 import os
 
-def open_file_explorer(path: str = None) -> str:
+def open_file_explorer(path: str = None) -> ToolResult:
     """
     Safely opens Windows Explorer to a specific directory.
     """
@@ -88,13 +113,25 @@ def open_file_explorer(path: str = None) -> str:
         print(f"[ACTION] Opening File Explorer: {path or 'Default'}")
         if path and os.path.isdir(path):
             os.startfile(path)
-            return f"Successfully opened file explorer at {path}."
+            return ToolResult(
+                status=VerificationStatus.UNVERIFIED,
+                message=f"Successfully requested file explorer to open at {path}.",
+                evidence="os.startfile executed without errors, but external window state is unverified."
+            )
         else:
             # Fallback to current directory or default
             os.startfile(".")
-            return "Successfully opened file explorer in the current directory."
+            return ToolResult(
+                status=VerificationStatus.UNVERIFIED,
+                message="Successfully requested file explorer to open in the current directory.",
+                evidence="os.startfile executed without errors, but external window state is unverified."
+            )
     except Exception as e:
-        return f"Error opening file explorer: {str(e)}"
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_FAILURE,
+            message=f"Error opening file explorer: {str(e)}",
+            evidence="Exception raised during os.startfile."
+        )
 
 OPEN_FILE_EXPLORER_TOOL = {
     "type": "function",
@@ -113,7 +150,7 @@ OPEN_FILE_EXPLORER_TOOL = {
     }
 }
 
-def open_system_settings(setting_page: str = None) -> str:
+def open_system_settings(setting_page: str = None) -> ToolResult:
     """
     Opens Windows settings.
     """
@@ -124,11 +161,23 @@ def open_system_settings(setting_page: str = None) -> str:
             uri += setting_page
         success = webbrowser.open(uri)
         if success:
-            return f"Successfully opened system settings ({uri})."
+            return ToolResult(
+                status=VerificationStatus.UNVERIFIED,
+                message=f"Successfully requested system settings ({uri}) to open.",
+                evidence="webbrowser.open returned True, but external window state cannot be verified."
+            )
         else:
-            return "Failed to open system settings."
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_FAILURE,
+                message="Failed to open system settings.",
+                evidence="webbrowser.open returned False."
+            )
     except Exception as e:
-        return f"Error opening system settings: {str(e)}"
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_FAILURE,
+            message=f"Error opening system settings: {str(e)}",
+            evidence="Exception raised during webbrowser.open."
+        )
 
 OPEN_SYSTEM_SETTINGS_TOOL = {
     "type": "function",
@@ -147,7 +196,7 @@ OPEN_SYSTEM_SETTINGS_TOOL = {
     }
 }
 
-def play_media(query: str) -> str:
+def play_media(query: str) -> ToolResult:
     """
     Searches for and plays a song/video on YouTube.
     """
@@ -158,11 +207,23 @@ def play_media(query: str) -> str:
         url = f"https://www.youtube.com/results?search_query={encoded_query}"
         success = webbrowser.open(url)
         if success:
-            return f"Successfully searched and played '{query}' on YouTube."
+            return ToolResult(
+                status=VerificationStatus.UNVERIFIED,
+                message=f"Successfully executed command to play '{query}' on YouTube.",
+                evidence="webbrowser.open returned True, but playback state cannot be verified."
+            )
         else:
-            return f"Failed to play '{query}'."
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_FAILURE,
+                message=f"Failed to play '{query}'.",
+                evidence="webbrowser.open returned False."
+            )
     except Exception as e:
-        return f"Error playing media: {str(e)}"
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_FAILURE,
+            message=f"Error playing media: {str(e)}",
+            evidence="Exception raised during webbrowser.open."
+        )
 
 PLAY_MEDIA_TOOL = {
     "type": "function",
@@ -182,7 +243,7 @@ PLAY_MEDIA_TOOL = {
     }
 }
 
-def remember_file(file_path: str) -> str:
+def remember_file(file_path: str) -> ToolResult:
     """
     Reads a file and ingests its contents into JARVIS's long-term memory (ChromaDB).
     """
@@ -191,9 +252,18 @@ def remember_file(file_path: str) -> str:
         from core.database import LongTermMemory
         
         ltm = LongTermMemory()
-        return ingest_file_to_chroma(file_path, ltm)
+        result_msg = ingest_file_to_chroma(file_path, ltm)
+        return ToolResult(
+            status=VerificationStatus.UNVERIFIED,
+            message=result_msg,
+            evidence="Ingestion function returned without crashing. Deep DB check not implemented yet."
+        )
     except Exception as e:
-        return f"Error remembering file: {str(e)}"
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_FAILURE,
+            message=f"Error remembering file: {str(e)}",
+            evidence="Exception raised during ingestion."
+        )
 
 REMEMBER_FILE_TOOL = {
     "type": "function",
@@ -213,7 +283,7 @@ REMEMBER_FILE_TOOL = {
     }
 }
 
-def switch_voice_profile(profile_name: str) -> str:
+def switch_voice_profile(profile_name: str) -> ToolResult:
     """
     Switches the TTS voice profile for the session.
     """
@@ -221,11 +291,23 @@ def switch_voice_profile(profile_name: str) -> str:
         from core.tts_engine import set_voice_profile
         success = set_voice_profile(profile_name)
         if success:
-            return f"Successfully switched voice profile to '{profile_name}'."
+            return ToolResult(
+                status=VerificationStatus.UNVERIFIED,
+                message=f"Successfully switched voice profile to '{profile_name}'.",
+                evidence="set_voice_profile returned True, but voice synthesis validation not performed."
+            )
         else:
-            return f"Failed: '{profile_name}' is not a valid profile. Valid profiles are: default, young_man, young_woman, old_man, old_woman, kid, flirty."
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_FAILURE,
+                message=f"Failed: '{profile_name}' is not a valid profile. Valid profiles are: default, young_man, young_woman, old_man, old_woman, kid, flirty.",
+                evidence="set_voice_profile returned False."
+            )
     except Exception as e:
-        return f"Error switching voice profile: {str(e)}"
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_FAILURE,
+            message=f"Error switching voice profile: {str(e)}",
+            evidence="Exception raised during voice profile switch."
+        )
 
 SWITCH_VOICE_PROFILE_TOOL = {
     "type": "function",

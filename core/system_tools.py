@@ -1,15 +1,25 @@
 import psutil
 import subprocess
 import os
+from core.verification import ToolResult, VerificationStatus
 
-def check_system_health() -> str:
+def check_system_health() -> ToolResult:
     """Returns the current CPU and RAM usage."""
     try:
         cpu = psutil.cpu_percent(interval=1)
         ram = psutil.virtual_memory()
-        return f"CPU Usage: {cpu}%\nRAM Usage: {ram.percent}% (Used: {ram.used // (1024**3)}GB / Total: {ram.total // (1024**3)}GB)"
+        msg = f"CPU Usage: {cpu}%\nRAM Usage: {ram.percent}% (Used: {ram.used // (1024**3)}GB / Total: {ram.total // (1024**3)}GB)"
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_SUCCESS,
+            message=msg,
+            evidence="psutil returned valid system metrics."
+        )
     except Exception as e:
-        return f"Error checking system health: {e}"
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_FAILURE,
+            message=f"Error checking system health: {e}",
+            evidence="psutil exception raised."
+        )
 
 CHECK_SYSTEM_HEALTH_TOOL = {
     "type": "function",
@@ -20,7 +30,7 @@ CHECK_SYSTEM_HEALTH_TOOL = {
     }
 }
 
-def launch_app(app_name: str) -> str:
+def launch_app(app_name: str) -> ToolResult:
     """Launches a local application like notepad or calc."""
     try:
         print(f"[ACTION] Launching app: {app_name}")
@@ -35,10 +45,29 @@ def launch_app(app_name: str) -> str:
         exe = app_map.get(app_name.lower(), app_name)
         
         # We use Popen so it doesn't block
-        subprocess.Popen(exe, shell=True)
-        return f"Successfully launched {app_name}."
+        proc = subprocess.Popen(exe, shell=True)
+        
+        # Verify it started without immediate error
+        import time
+        time.sleep(0.5)
+        if proc.poll() is not None and proc.returncode != 0:
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_FAILURE,
+                message=f"Failed to launch {app_name}.",
+                evidence=f"Process exited immediately with code {proc.returncode}."
+            )
+            
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_SUCCESS,
+            message=f"Successfully launched {app_name}.",
+            evidence=f"Process started (PID {proc.pid}) and did not exit immediately."
+        )
     except Exception as e:
-        return f"Error launching app {app_name}: {e}"
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_FAILURE,
+            message=f"Error launching app {app_name}: {e}",
+            evidence="Exception raised during subprocess.Popen."
+        )
 
 LAUNCH_APP_TOOL = {
     "type": "function",
@@ -58,19 +87,44 @@ LAUNCH_APP_TOOL = {
     }
 }
 
-def delete_file(file_path: str) -> str:
+def delete_file(file_path: str) -> ToolResult:
     """Deletes a file from the disk."""
     try:
         print(f"[ACTION] Deleting file: {file_path}")
         if not os.path.exists(file_path):
-            return f"Error: File {file_path} does not exist."
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_FAILURE,
+                message=f"Error: File {file_path} does not exist.",
+                evidence=f"os.path.exists({file_path}) returned False before deletion."
+            )
         if not os.path.isfile(file_path):
-            return f"Error: {file_path} is not a file."
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_FAILURE,
+                message=f"Error: {file_path} is not a file.",
+                evidence=f"os.path.isfile({file_path}) returned False."
+            )
         
         os.remove(file_path)
-        return f"Successfully deleted file: {file_path}"
+        
+        # VERIFICATION STEP
+        if os.path.exists(file_path):
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_FAILURE,
+                message=f"Failed to delete file: {file_path}",
+                evidence=f"File still exists after os.remove() attempt. Likely OS lock or permission issue."
+            )
+            
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_SUCCESS,
+            message=f"Successfully deleted file: {file_path}",
+            evidence=f"os.path.exists({file_path}) returned False after deletion."
+        )
     except Exception as e:
-        return f"Error deleting file {file_path}: {e}"
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_FAILURE,
+            message=f"Error deleting file {file_path}: {e}",
+            evidence="Exception raised during deletion attempt."
+        )
 
 DELETE_FILE_TOOL = {
     "type": "function",

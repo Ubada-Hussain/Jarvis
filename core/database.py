@@ -3,6 +3,9 @@ from datetime import datetime
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 import chromadb
+import sqlite3
+import json
+import threading
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -111,27 +114,204 @@ class LongTermMemory:
         except Exception as e:
             print(f"[ERROR] Error writing to ChromaDB: {e}")
 
-    def retrieve_context(self, query, n_results=3):
+    def retrieve_context(self, query, n_results=3, metadata_filter=None):
         """
         Retrieves historical context based on semantic similarity.
         
         Args:
             query (str): The search query.
             n_results (int): Number of similar documents to retrieve.
+            metadata_filter (dict, optional): ChromaDB metadata filter.
             
         Returns:
-            list: List of document strings that match the query.
+            list: List of document strings or full results if structured.
         """
         if self.collection is None:
             print("[WARN] ChromaDB is not connected. Returning empty context.")
             return []
 
         try:
-            results = self.collection.query(
-                query_texts=[query],
-                n_results=n_results
-            )
-            return results.get('documents', [[]])[0]
+            kwargs = {
+                "query_texts": [query],
+                "n_results": n_results
+            }
+            if metadata_filter:
+                kwargs["where"] = metadata_filter
+
+            results = self.collection.query(**kwargs)
+            return results
         except Exception as e:
             print(f"[ERROR] Error querying ChromaDB: {e}")
-            return []
+            return {"documents": [[]], "metadatas": [[]], "ids": [[]]}
+            
+    def delete_memory(self, doc_id: str):
+        if self.collection is None:
+            return
+        try:
+            self.collection.delete(ids=[doc_id])
+        except Exception as e:
+            print(f"[ERROR] Error deleting from ChromaDB: {e}")
+
+
+class StructuredMemoryStore:
+    """
+    Handles structured, relational storage for Episodic and Procedural memories 
+    using SQLite to ensure ACID compliance and zero dependency footprint.
+    Reuses the same database file as AuditLogger to minimize files.
+    """
+    def __init__(self, db_path: str = "audit.db"):
+        self.db_path = db_path
+        self._lock = threading.Lock()
+        self._init_db()
+
+    def _init_db(self):
+        try:
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS episodic_memory (
+                            memory_id TEXT PRIMARY KEY,
+                            timestamp TEXT,
+                            task_id TEXT,
+                            session_id TEXT,
+                            event_type TEXT,
+                            summary TEXT,
+                            outcome TEXT,
+                            evidence_reference TEXT,
+                            agents_involved TEXT,
+                            tags TEXT,
+                            created_at TEXT,
+                            updated_at TEXT
+                        )
+                    ''')
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS procedural_memory (
+                            procedure_id TEXT PRIMARY KEY,
+                            name TEXT,
+                            description TEXT,
+                            trigger TEXT,
+                            steps TEXT,
+                            dependencies TEXT,
+                            required_capabilities TEXT,
+                            risk_profile TEXT,
+                            verification_requirements TEXT,
+                            enabled BOOLEAN,
+                            created_at TEXT,
+                            updated_at TEXT,
+                            last_used TEXT,
+                            success_count INTEGER,
+                            failure_count INTEGER
+                        )
+                    ''')
+                    conn.commit()
+                finally:
+                    conn.close()
+        except Exception as e:
+            print(f"[MEMORY DB ERROR] Failed to initialize Structured Memory: {e}")
+
+    def save_episodic(self, memory):
+        try:
+            d = memory.model_dump()
+            d['agents_involved'] = json.dumps(d['agents_involved'])
+            d['tags'] = json.dumps(d['tags'])
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    cursor = conn.cursor()
+                    columns = ', '.join(d.keys())
+                    placeholders = ', '.join(['?'] * len(d))
+                    cursor.execute(f"INSERT OR REPLACE INTO episodic_memory ({columns}) VALUES ({placeholders})", list(d.values()))
+                    conn.commit()
+                finally:
+                    conn.close()
+            return True
+        except Exception as e:
+            print(f"[MEMORY DB ERROR] {e}")
+            return False
+
+    def save_procedural(self, memory):
+        try:
+            d = memory.model_dump()
+            d['steps'] = json.dumps(d['steps'])
+            d['dependencies'] = json.dumps(d['dependencies'])
+            d['required_capabilities'] = json.dumps(d['required_capabilities'])
+            d['verification_requirements'] = json.dumps(d['verification_requirements'])
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    cursor = conn.cursor()
+                    columns = ', '.join(d.keys())
+                    placeholders = ', '.join(['?'] * len(d))
+                    cursor.execute(f"INSERT OR REPLACE INTO procedural_memory ({columns}) VALUES ({placeholders})", list(d.values()))
+                    conn.commit()
+                finally:
+                    conn.close()
+            return True
+        except Exception as e:
+            print(f"[MEMORY DB ERROR] {e}")
+            return False
+
+    def get_episodic(self, memory_id: str):
+        try:
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM episodic_memory WHERE memory_id = ?", (memory_id,))
+                row = cursor.fetchone()
+                conn.close()
+                if row:
+                    d = dict(row)
+                    d['agents_involved'] = json.loads(d['agents_involved'])
+                    d['tags'] = json.loads(d['tags'])
+                    return d
+                return None
+        except Exception as e:
+            print(f"[MEMORY DB ERROR] {e}")
+            return None
+
+    def get_procedural(self, procedure_id: str):
+        try:
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM procedural_memory WHERE procedure_id = ?", (procedure_id,))
+                row = cursor.fetchone()
+                conn.close()
+                if row:
+                    d = dict(row)
+                    d['steps'] = json.loads(d['steps'])
+                    d['dependencies'] = json.loads(d['dependencies'])
+                    d['required_capabilities'] = json.loads(d['required_capabilities'])
+                    d['verification_requirements'] = json.loads(d['verification_requirements'])
+                    d['enabled'] = bool(d['enabled'])
+                    return d
+                return None
+        except Exception as e:
+            print(f"[MEMORY DB ERROR] {e}")
+            return None
+
+    def delete_episodic(self, memory_id: str):
+        try:
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM episodic_memory WHERE memory_id = ?", (memory_id,))
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            print(f"[MEMORY DB ERROR] {e}")
+
+    def delete_procedural(self, procedure_id: str):
+        try:
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM procedural_memory WHERE procedure_id = ?", (procedure_id,))
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            print(f"[MEMORY DB ERROR] {e}")

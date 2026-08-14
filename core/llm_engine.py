@@ -1,7 +1,9 @@
 import os
 import requests
+import time
 from dotenv import load_dotenv
 from groq import Groq
+from core.observability import observability_manager, ObservabilityEvent
 
 load_dotenv()
 
@@ -75,7 +77,18 @@ class LLMEngine:
                 api_params["tools"] = tools
                 api_params["tool_choice"] = "auto"
                 
+            start_t = time.time()
             completion = self.client.chat.completions.create(**api_params)
+            duration_ms = int((time.time() - start_t) * 1000)
+            
+            observability_manager.runtime_state["model"] = self.model
+            observability_manager.emit_event(ObservabilityEvent(
+                event_type="LLM_GENERATION",
+                model=self.model,
+                duration_ms=duration_ms,
+                metadata={"provider": "Groq"}
+            ))
+            
             response_message = completion.choices[0].message
             
             # Check if LLM wanted to call any tools
@@ -87,30 +100,60 @@ class LLMEngine:
                 # Execute all tools
                 for tool_call in tool_calls:
                     function_name = tool_call.function.name
-                    function_to_call = tool_logic.get(function_name)
-                    
-                    if function_to_call:
-                        import json
+                    # Support ExecutionGate or legacy dictionary
+                    if hasattr(tool_logic, 'execute'):
                         try:
                             function_args = json.loads(tool_call.function.arguments)
-                            print(f"[LLM Tool Call] Executing '{function_name}' with args: {function_args}")
-                            function_response = function_to_call(**function_args)
+                            print(f"[LLM Tool Call] Executing '{function_name}' via ExecutionGate with args: {function_args}")
+                            function_response = tool_logic.execute(function_name, **function_args)
+                            
+                            if hasattr(function_response, 'to_json'):
+                                function_response_str = function_response.to_json()
+                            else:
+                                function_response_str = str(function_response)
                         except Exception as e:
-                            function_response = f"Error executing tool: {e}"
+                            function_response_str = f"Error executing tool via gate: {e}"
+                    else:
+                        # Legacy fallback
+                        function_to_call = tool_logic.get(function_name)
+                        
+                        if function_to_call:
+                            try:
+                                function_args = json.loads(tool_call.function.arguments)
+                                print(f"[LLM Tool Call] Executing '{function_name}' directly with args: {function_args}")
+                                function_response = function_to_call(**function_args)
+                                
+                                # Support the Verification-First architecture (ToolResult)
+                                if hasattr(function_response, 'to_json'):
+                                    function_response_str = function_response.to_json()
+                                else:
+                                    function_response_str = str(function_response)
+                                    
+                            except Exception as e:
+                                function_response_str = f"Error executing tool: {e}"
                         
                         # Append the tool's response to history
                         messages.append({
                             "tool_call_id": tool_call.id,
                             "role": "tool",
                             "name": function_name,
-                            "content": str(function_response),
+                            "content": function_response_str,
                         })
                 
                 # Second API call to get the final answer using tool results
                 if tools:
                     api_params["tool_choice"] = "none" # Force it to answer now
                 
+                start_t = time.time()
                 second_completion = self.client.chat.completions.create(**api_params)
+                duration_ms = int((time.time() - start_t) * 1000)
+                
+                observability_manager.emit_event(ObservabilityEvent(
+                    event_type="LLM_GENERATION",
+                    model=self.model,
+                    duration_ms=duration_ms,
+                    metadata={"provider": "Groq", "is_final_answer": True}
+                ))
                 return second_completion.choices[0].message.content
                 
             return response_message.content
@@ -129,11 +172,22 @@ class LLMEngine:
                         func_args_str = match.group(2)
                         print(f"[LLM_ENGINE RECOVERY] Extracted function: {func_name}, args: {func_args_str}")
                         
-                        func_to_call = tool_logic.get(func_name)
-                        if func_to_call:
-                            args = json.loads(func_args_str)
-                            result = func_to_call(**args)
-                            return f"Action performed successfully: {result}"
+                            if hasattr(tool_logic, 'execute'):
+                                # It's an ExecutionGate
+                                result = tool_logic.execute(func_name, **args)
+                            else:
+                                # Legacy raw dictionary fallback (not recommended)
+                                func_to_call = tool_logic.get(func_name)
+                                if func_to_call:
+                                    result = func_to_call(**args)
+                                else:
+                                    raise Exception(f"Tool {func_name} not found.")
+                                    
+                            if hasattr(result, 'to_json'):
+                                result_str = result.to_json()
+                            else:
+                                result_str = str(result)
+                            return f"Action performed successfully: {result_str}"
                 except Exception as inner_e:
                     print(f"[LLM_ENGINE RECOVERY ERROR] Failed to recover: {inner_e}")
                     
