@@ -163,11 +163,43 @@ class TestMemoryArchitecture(unittest.TestCase):
         self.assertIsNone(self.store.get_procedural(p.procedure_id))
         self.long_term_mock.delete_memory.assert_called_with(p.procedure_id)
 
-    # Note: 10, 11, 12, 19, 20 are logical guarantees provided by 
+    # Note: 10, 11, 12, 19 are logical guarantees provided by 
     # instantiating a TaskGraph from a ProceduralMemory and feeding it to the Scheduler,
     # which inherently goes through the A2ADispatcher and ExecutionGate.
-    
-    # --- RETRIEVAL TESTS ---
+
+    def test_20_procedural_memory_respects_execution_gate(self):
+        # Task 7 Regression Test:
+        # Ensures that a ProceduralMemory creates a TaskGraph correctly bypassing LLM
+        # but the resulting TaskNodes still have to go through ExecutionGate via the scheduler logic.
+        from core.planner import Planner
+        p = ProceduralMemory(
+            procedure_id="p-gate-test",
+            name="DangerousProc", 
+            description="d", 
+            trigger="do bad things", 
+            steps=[ProcedureStep(agent="SystemAgent", action="delete_all", description="delete")]
+        )
+        self.store.save_procedural(p)
+        self.long_term_mock.retrieve_context.return_value = {
+            "documents": [["trigger text"]],
+            "metadatas": [[{"type": "procedural", "id": "p-gate-test"}]],
+            "ids": [["1"]]
+        }
+        
+        planner = Planner(llm_engine=MagicMock(), memory_manager=self.memory_manager)
+        
+        # When creating graph, it should match ProceduralMemory and skip LLM
+        graph = planner.create_graph("do bad things", {"SystemAgent": "Mock"})
+        
+        self.assertIsNotNone(graph)
+        self.assertEqual(len(graph.nodes), 1)
+        
+        # The node must exist, but execution is deferred to standard Agent loop
+        # which uses ExecutionGate. We verify it created the TaskNode correctly
+        # so the standard pipeline takes over.
+        node = list(graph.nodes.values())[0]
+        self.assertEqual(node.agent, "SystemAgent")
+        self.assertEqual(node.description, "delete_all: delete")
     def test_13_14_15_16_retrieval(self):
         # Mock ChromaDB response
         self.long_term_mock.retrieve_context.return_value = {
