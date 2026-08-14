@@ -184,15 +184,15 @@ class LLMEngine:
                         else:
                             # Legacy raw dictionary fallback (not recommended)
                             func_to_call = tool_logic.get(func_name)
-                                if func_to_call:
-                                    result = func_to_call(**args)
-                                else:
-                                    raise Exception(f"Tool {func_name} not found.")
-                                    
-                            if hasattr(result, 'to_json'):
-                                result_str = result.to_json()
+                            if func_to_call:
+                                result = func_to_call(**args)
                             else:
-                                result_str = str(result)
+                                raise Exception(f"Tool {func_name} not found.")
+                                
+                        if hasattr(result, 'to_json'):
+                            result_str = result.to_json()
+                        else:
+                            result_str = str(result)
                             return f"Action performed successfully: {result_str}"
                 except Exception as inner_e:
                     print(f"[LLM_ENGINE RECOVERY ERROR] Failed to recover: {inner_e}")
