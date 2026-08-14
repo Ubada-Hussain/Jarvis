@@ -223,6 +223,13 @@ class SQLiteAuditLogger:
                         list(msg_dict.values())
                     )
                     conn.commit()
+                finally:
+                    conn.close()
+            return True
+        except Exception as e:
+            print(f"\n[CRITICAL AUDIT FAILURE] Failed to write A2A message '{message.message_id}'. Reason: {e}")
+            return False
+
     def log_recovery_event(
         self,
         task_id: str,
