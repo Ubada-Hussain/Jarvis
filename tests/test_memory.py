@@ -56,7 +56,7 @@ class TestMemoryArchitecture(unittest.TestCase):
         node.status = TaskState.COMPLETED
         node.verification_status = "VERIFIED_SUCCESS"
         node.result = "Did the work"
-        graph.add_node(node)
+        graph.nodes[node.node_id] = node
         
         self.audit_logger.events.append({"task_id": "n1", "evidence": "File updated"})
         
@@ -76,7 +76,7 @@ class TestMemoryArchitecture(unittest.TestCase):
         node = TaskNode(node_id="n2", agent="A", description="Trivial")
         node.status = TaskState.COMPLETED
         node.verification_status = "N/A" # Unverified or trivial
-        graph.add_node(node)
+        graph.nodes[node.node_id] = node
         
         self.scheduler._form_episodic_memories(graph)
         
@@ -93,7 +93,7 @@ class TestMemoryArchitecture(unittest.TestCase):
         node.status = TaskState.FAILED
         node.verification_status = "VERIFIED_FAILURE"
         node.error = "Crash"
-        graph.add_node(node)
+        graph.nodes[node.node_id] = node
         
         self.scheduler._form_episodic_memories(graph)
         
@@ -110,7 +110,7 @@ class TestMemoryArchitecture(unittest.TestCase):
         node = TaskNode(node_id="n4", agent="A", description="Unverified")
         node.status = TaskState.COMPLETED
         # Missing VERIFIED_SUCCESS
-        graph.add_node(node)
+        graph.nodes[node.node_id] = node
         
         self.scheduler._form_episodic_memories(graph)
         conn = sqlite3.connect(self.db_path)
