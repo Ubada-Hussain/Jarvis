@@ -6,7 +6,7 @@ class SystemAgent(BaseAgent):
     name = "SystemAgent"
     description = "Specialized in local OS automation (file/folder management, running shell scripts, and web searching)."
 
-    def execute(self, task: str) -> str:
+    def execute(self, task: str, task_id: str = None) -> str:
         """
         Executes system level tasks. Uses specific OS tools for health, launching apps, and file explorer.
         """
@@ -20,8 +20,8 @@ class SystemAgent(BaseAgent):
         )
 
         from core.tools import (
-            OPEN_FILE_EXPLORER_TOOL, open_file_explorer, 
-            SEARCH_INTERNET_TOOL, search_internet,
+            OPEN_FILE_EXPLORER_TOOL, 
+            SEARCH_INTERNET_TOOL,
             SWITCH_VOICE_PROFILE_TOOL, switch_voice_profile
         )
         from core.system_tools import (
@@ -30,16 +30,14 @@ class SystemAgent(BaseAgent):
             DELETE_FILE_TOOL, delete_file
         )
 
-        def _launch_app_wrapper(app_name: str):
-            if getattr(self, 'approval_manager', None) and not self.approval_manager.require_approval(f"Launch Application: {app_name}"):
-                return f"[{self.name}] Action aborted by user."
-            return launch_app(app_name)
-
-        def _delete_file_wrapper(file_path: str):
-            if getattr(self, 'approval_manager', None) and not self.approval_manager.require_approval(f"Delete File: {file_path}"):
-                return f"[{self.name}] Action aborted by user."
-            return delete_file(file_path)
+        from core.execution_gate import ToolMetadata, RiskLevel
         
+        gate = self._setup_execution_gate(task_id)
+        gate.register(ToolMetadata("check_system_health", RiskLevel.READ_ONLY, "system_read"), check_system_health)
+        gate.register(ToolMetadata("launch_app", RiskLevel.REVERSIBLE, "process_execution"), launch_app)
+        gate.register(ToolMetadata("delete_file", RiskLevel.DESTRUCTIVE, "fs_write", requires_confirmation=True), delete_file)
+        gate.register(ToolMetadata("switch_voice_profile", RiskLevel.REVERSIBLE, "config_write"), switch_voice_profile)
+
         response = self.llm.generate_response(
             prompt=task, 
             system_prompt=system_prompt,
@@ -51,14 +49,7 @@ class SystemAgent(BaseAgent):
                 DELETE_FILE_TOOL,
                 SWITCH_VOICE_PROFILE_TOOL
             ],
-            tool_logic={
-                "open_file_explorer": open_file_explorer,
-                "check_system_health": check_system_health,
-                "launch_app": _launch_app_wrapper,
-                "search_internet": search_internet,
-                "delete_file": _delete_file_wrapper,
-                "switch_voice_profile": switch_voice_profile
-            }
+            tool_logic=gate
         )
         
         if not response:

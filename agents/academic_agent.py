@@ -4,7 +4,7 @@ class AcademicAgent(BaseAgent):
     name = "AcademicAgent"
     description = "Specialized in academic research, summarizing topics, drafting structured project outlines, and database schema design."
 
-    def execute(self, task: str) -> str:
+    def execute(self, task: str, task_id: str = None) -> str:
         """
         Executes a task focused on academic structure and research.
         """
@@ -47,6 +47,7 @@ class AcademicAgent(BaseAgent):
         self.memory.save_interaction(
             user_input=task, 
             ai_response=response, 
+            gate=self._setup_execution_gate(task_id),
             activity_type=f"agent_execution_{self.name}"
         )
         return response

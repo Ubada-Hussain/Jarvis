@@ -6,7 +6,7 @@ class ObserverAgent(BaseAgent):
     name = "ObserverAgent"
     description = "Observes interaction logs, identifies repeated patterns, and auto-generates new sub-agents to handle them."
 
-    def execute(self, task: str = None) -> str:
+    def execute(self, task: str = None, task_id: str = None) -> str:
         """
         The Observer Agent doesn't typically take a task directly from the user.
         Instead, it analyzes the database. We can trigger this manually or periodically.
@@ -19,9 +19,9 @@ class ObserverAgent(BaseAgent):
         
         print(f"[{self.name}] Detected gap: {detected_gap}")
         
-        return self._generate_new_agent(detected_gap)
+        return self._generate_new_agent(detected_gap, task_id)
 
-    def _generate_new_agent(self, gap_description: str) -> str:
+    def _generate_new_agent(self, gap_description: str, task_id: str = None) -> str:
         """
         Generates Python code for a new agent and writes it to custom_agents directory.
         """
@@ -35,6 +35,7 @@ class ObserverAgent(BaseAgent):
         )
         
         system_prompt = "You are a master Python meta-programmer. Output only raw python code."
+        gate = self._setup_execution_gate(task_id)
         code = self.llm.generate_response(prompt=prompt, system_prompt=system_prompt)
         
         if not code:

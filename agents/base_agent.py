@@ -14,7 +14,26 @@ class BaseAgent:
         self.memory = memory
         self.approval_manager = approval_manager
 
-    def execute(self, task: str) -> str:
+    def _setup_execution_gate(self, task_id: str = None) -> "ExecutionGate":
+        """Instantiates the ExecutionGate and registers default tools."""
+        from core.execution_gate import ExecutionGate, ToolMetadata, RiskLevel
+        from core.tools import (
+            search_internet, open_url, open_file_explorer, 
+            open_system_settings, play_media, remember_file
+        )
+        
+        gate = ExecutionGate(self.approval_manager, agent_name=self.name, task_id=task_id)
+        
+        gate.register(ToolMetadata("search_internet", RiskLevel.READ_ONLY, "network_access"), search_internet)
+        gate.register(ToolMetadata("open_url", RiskLevel.REVERSIBLE, "browser_access"), open_url)
+        gate.register(ToolMetadata("open_file_explorer", RiskLevel.REVERSIBLE, "system_access"), open_file_explorer)
+        gate.register(ToolMetadata("open_system_settings", RiskLevel.REVERSIBLE, "system_access"), open_system_settings)
+        gate.register(ToolMetadata("play_media", RiskLevel.REVERSIBLE, "browser_access"), play_media)
+        gate.register(ToolMetadata("remember_file", RiskLevel.REVERSIBLE, "db_write"), remember_file)
+        
+        return gate
+
+    def execute(self, task: str, task_id: str = None) -> str:
         """
         Executes a task using the agent's persona. Subclasses can override this 
         to add custom logic or tool usage before relying on the LLM.
@@ -43,13 +62,12 @@ class BaseAgent:
 
         
         from core.tools import (
-            SEARCH_INTERNET_TOOL, search_internet,
-            OPEN_URL_TOOL, open_url,
-            OPEN_FILE_EXPLORER_TOOL, open_file_explorer,
-            OPEN_SYSTEM_SETTINGS_TOOL, open_system_settings,
-            PLAY_MEDIA_TOOL, play_media,
-            REMEMBER_FILE_TOOL, remember_file
+            SEARCH_INTERNET_TOOL, OPEN_URL_TOOL, OPEN_FILE_EXPLORER_TOOL,
+            OPEN_SYSTEM_SETTINGS_TOOL, PLAY_MEDIA_TOOL, REMEMBER_FILE_TOOL
         )
+        
+        gate = self._setup_execution_gate(task_id)
+        
         response = self.llm.generate_response(
             prompt=task, 
             system_prompt=system_prompt,
@@ -61,14 +79,7 @@ class BaseAgent:
                 PLAY_MEDIA_TOOL,
                 REMEMBER_FILE_TOOL
             ],
-            tool_logic={
-                "search_internet": search_internet,
-                "open_url": open_url,
-                "open_file_explorer": open_file_explorer,
-                "open_system_settings": open_system_settings,
-                "play_media": play_media,
-                "remember_file": remember_file
-            }
+            tool_logic=gate
         )
         
         if not response:

@@ -2,8 +2,10 @@ import os
 import subprocess
 import signal
 import socket
+import time
 from pathlib import Path
 from agents.base_agent import BaseAgent
+from core.verification import ToolResult, VerificationStatus
 
 # Module-level process registry so start/stop can share state
 _RUNNING_SERVERS: dict[str, subprocess.Popen] = {}
@@ -26,7 +28,7 @@ class DevAgent(BaseAgent):
         "starting/stopping local dev servers (Vite React frontend), and reviewing code files."
     )
 
-    def execute(self, task: str) -> str:
+    def execute(self, task: str, task_id: str = None) -> str:
         """
         Uses LLM Tool Calling to autonomously start/stop servers or inspect directories.
         """
@@ -67,12 +69,16 @@ class DevAgent(BaseAgent):
         }
         
         from core.tools import (
-            SEARCH_INTERNET_TOOL, search_internet, 
-            OPEN_URL_TOOL, open_url, 
-            OPEN_FILE_EXPLORER_TOOL, open_file_explorer,
-            OPEN_SYSTEM_SETTINGS_TOOL, open_system_settings,
-            PLAY_MEDIA_TOOL, play_media
+            SEARCH_INTERNET_TOOL, OPEN_URL_TOOL, OPEN_FILE_EXPLORER_TOOL, 
+            OPEN_SYSTEM_SETTINGS_TOOL, PLAY_MEDIA_TOOL
         )
+        from core.execution_gate import ToolMetadata, RiskLevel
+        
+        gate = self._setup_execution_gate(task_id)
+        gate.register(ToolMetadata("start_server", RiskLevel.REVERSIBLE, "server_execution"), self._start_server)
+        gate.register(ToolMetadata("stop_server", RiskLevel.REVERSIBLE, "server_execution"), self._stop_server)
+        gate.register(ToolMetadata("server_status", RiskLevel.READ_ONLY, "process_monitoring"), self._server_status)
+        gate.register(ToolMetadata("inspect_directory", RiskLevel.READ_ONLY, "fs_read"), self._inspect_directory)
         
         system_prompt = (
             f"You are {self.name}. {self.description}\n"
@@ -101,17 +107,7 @@ class DevAgent(BaseAgent):
                 SEARCH_INTERNET_TOOL, OPEN_URL_TOOL, OPEN_FILE_EXPLORER_TOOL, 
                 OPEN_SYSTEM_SETTINGS_TOOL, PLAY_MEDIA_TOOL
             ],
-            tool_logic={
-                "start_server": self._start_server,
-                "stop_server": self._stop_server,
-                "server_status": self._server_status,
-                "inspect_directory": self._inspect_directory,
-                "search_internet": search_internet,
-                "open_url": open_url,
-                "open_file_explorer": open_file_explorer,
-                "open_system_settings": open_system_settings,
-                "play_media": play_media
-            }
+            tool_logic=gate
         )
         
         if not response:
@@ -129,7 +125,7 @@ class DevAgent(BaseAgent):
     # Tool: Inspect Directory
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _inspect_directory(self) -> str:
+    def _inspect_directory(self) -> ToolResult:
         """Lists files in the current working directory."""
         try:
             files = os.listdir(".")
@@ -139,15 +135,23 @@ class DevAgent(BaseAgent):
                 ai_response=result,
                 activity_type="dev_agent_tool",
             )
-            return result
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_SUCCESS,
+                message=result,
+                evidence="os.listdir returned successfully."
+            )
         except Exception as e:
-            return f"[{self.name} ERROR] Failed to inspect directory: {e}"
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_FAILURE,
+                message=f"[{self.name} ERROR] Failed to inspect directory: {e}",
+                evidence="Exception raised during os.listdir."
+            )
 
     # ─────────────────────────────────────────────────────────────────────────
     # Tool: Start Server (Vite React Frontend via `npm run dev`)
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _start_server(self) -> str:
+    def _start_server(self) -> ToolResult:
         """
         Starts the Vite dev server for jarvis-ui using `npm run dev`.
         Handles: already-running processes, port conflicts, missing npm.
@@ -158,9 +162,10 @@ class DevAgent(BaseAgent):
         if server_key in _RUNNING_SERVERS:
             proc = _RUNNING_SERVERS[server_key]
             if proc.poll() is None:  # still running
-                return (
-                    f"[{self.name}] Server '{server_key}' is already running "
-                    f"(PID {proc.pid}). Use 'stop server' to terminate it first."
+                return ToolResult(
+                    status=VerificationStatus.VERIFIED_SUCCESS,
+                    message=f"[{self.name}] Server '{server_key}' is already running (PID {proc.pid}). Use 'stop server' to terminate it first.",
+                    evidence=f"Process {proc.pid} is alive."
                 )
             else:
                 # Process died on its own — clean up stale entry
@@ -168,23 +173,19 @@ class DevAgent(BaseAgent):
 
         # ── Guard: port already occupied by another process ──────────────────
         if _is_port_in_use(VITE_PORT):
-            return (
-                f"[{self.name}] Port {VITE_PORT} is already in use by another process. "
-                f"Stop that process manually or use a different port."
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_FAILURE,
+                message=f"[{self.name}] Port {VITE_PORT} is already in use by another process. Stop that process manually or use a different port.",
+                evidence=f"_is_port_in_use({VITE_PORT}) returned True before starting."
             )
 
         # ── Guard: ui directory must exist ───────────────────────────────────
         if not os.path.isdir(JARVIS_UI_DIR):
-            return (
-                f"[{self.name} ERROR] jarvis-ui directory not found at: {JARVIS_UI_DIR}. "
-                "Cannot start server."
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_FAILURE,
+                message=f"[{self.name} ERROR] jarvis-ui directory not found at: {JARVIS_UI_DIR}. Cannot start server.",
+                evidence=f"os.path.isdir({JARVIS_UI_DIR}) returned False."
             )
-
-        # ── Approval gate ─────────────────────────────────────────────────────
-        if self.approval_manager and not self.approval_manager.require_approval(
-            f"Start Vite dev server in {JARVIS_UI_DIR}"
-        ):
-            return f"[{self.name}] Action aborted by user."
 
         try:
             print(f"[{self.name}] Launching 'npm run dev' in {JARVIS_UI_DIR} ...")
@@ -193,55 +194,66 @@ class DevAgent(BaseAgent):
                 cwd=JARVIS_UI_DIR,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                # On Windows, create a new process group so we can kill it cleanly
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
                 text=True,
             )
             _RUNNING_SERVERS[server_key] = proc
 
-            # Give Vite ~2 seconds to start, then verify the port is live
-            import time
-            time.sleep(2)
-            if proc.poll() is not None:
-                # Process already died — capture stderr for diagnostics
-                _, stderr = proc.communicate()
-                return (
-                    f"[{self.name} ERROR] Server failed to start.\n"
-                    f"Exit code: {proc.returncode}\n"
-                    f"Stderr: {stderr[:500]}"
-                )
+            # Polling for verification
+            max_attempts = 10
+            attempt = 0
+            while attempt < max_attempts:
+                time.sleep(1)
+                
+                # Check if process died
+                if proc.poll() is not None:
+                    _, stderr = proc.communicate()
+                    del _RUNNING_SERVERS[server_key]
+                    return ToolResult(
+                        status=VerificationStatus.VERIFIED_FAILURE,
+                        message=f"[{self.name} ERROR] Server process exited unexpectedly.",
+                        evidence=f"Exit code: {proc.returncode}. Stderr: {stderr[:500]}"
+                    )
+                
+                # Verify port is open
+                if _is_port_in_use(VITE_PORT):
+                    result_msg = f"✅ Vite dev server started successfully (PID {proc.pid}). Open http://localhost:{VITE_PORT} in your browser."
+                    self.memory.save_interaction(user_input="Start Server", ai_response=result_msg, activity_type="dev_agent_tool")
+                    return ToolResult(
+                        status=VerificationStatus.VERIFIED_SUCCESS,
+                        message=result_msg,
+                        evidence=f"_is_port_in_use({VITE_PORT}) returned True."
+                    )
+                
+                attempt += 1
 
-            if _is_port_in_use(VITE_PORT):
-                result = (
-                    f"✅ Vite dev server started successfully (PID {proc.pid}). "
-                    f"Open http://localhost:{VITE_PORT} in your browser."
-                )
-            else:
-                result = (
-                    f"⚠️ Server process started (PID {proc.pid}) but port {VITE_PORT} "
-                    "is not yet responding. It may still be initializing."
-                )
-
-            self.memory.save_interaction(
-                user_input="Start Server",
-                ai_response=result,
-                activity_type="dev_agent_tool",
+            # If we exit the loop, port never opened
+            proc.kill()
+            del _RUNNING_SERVERS[server_key]
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_FAILURE,
+                message=f"[{self.name} ERROR] Server process started (PID {proc.pid}) but port {VITE_PORT} did not open within {max_attempts} seconds.",
+                evidence=f"_is_port_in_use({VITE_PORT}) returned False consistently."
             )
-            return result
 
         except FileNotFoundError:
-            return (
-                f"[{self.name} ERROR] 'npm' command not found. "
-                "Make sure Node.js is installed and available on your PATH."
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_FAILURE,
+                message=f"[{self.name} ERROR] 'npm' command not found. Make sure Node.js is installed and available on your PATH.",
+                evidence="FileNotFoundError raised when invoking 'npm'."
             )
         except Exception as e:
-            return f"[{self.name} ERROR] Failed to start server: {e}"
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_FAILURE,
+                message=f"[{self.name} ERROR] Failed to start server: {e}",
+                evidence="Exception raised during process launch."
+            )
 
     # ─────────────────────────────────────────────────────────────────────────
     # Tool: Stop Server
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _stop_server(self) -> str:
+    def _stop_server(self) -> ToolResult:
         """
         Terminates the tracked Vite dev server process gracefully,
         with a force-kill fallback for Windows.
@@ -251,18 +263,16 @@ class DevAgent(BaseAgent):
         if server_key not in _RUNNING_SERVERS:
             # No tracked process — check if port is still in use
             if _is_port_in_use(VITE_PORT):
-                return (
-                    f"[{self.name}] No server was started by this session, "
-                    f"but port {VITE_PORT} is in use by an external process. "
-                    "You'll need to stop it manually."
+                return ToolResult(
+                    status=VerificationStatus.VERIFIED_FAILURE,
+                    message=f"[{self.name}] No server was started by this session, but port {VITE_PORT} is in use by an external process. You'll need to stop it manually.",
+                    evidence=f"_is_port_in_use({VITE_PORT}) returned True, but not in _RUNNING_SERVERS."
                 )
-            return f"[{self.name}] No running server to stop."
-
-        # ── Approval gate ─────────────────────────────────────────────────────
-        if self.approval_manager and not self.approval_manager.require_approval(
-            "Stop Vite dev server"
-        ):
-            return f"[{self.name}] Action aborted by user."
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_SUCCESS,
+                message=f"[{self.name}] No running server to stop.",
+                evidence=f"Not in _RUNNING_SERVERS and port {VITE_PORT} is not in use."
+            )
 
         proc = _RUNNING_SERVERS[server_key]
         try:
@@ -281,22 +291,35 @@ class DevAgent(BaseAgent):
                     proc.wait()
 
             del _RUNNING_SERVERS[server_key]
+            
+            # Verify port is closed
+            if _is_port_in_use(VITE_PORT):
+                return ToolResult(
+                    status=VerificationStatus.VERIFIED_FAILURE,
+                    message=f"[{self.name} ERROR] Process was killed but port {VITE_PORT} is still in use.",
+                    evidence=f"_is_port_in_use({VITE_PORT}) returned True."
+                )
+
             result = f"✅ Vite dev server (PID {proc.pid}) stopped successfully."
-            self.memory.save_interaction(
-                user_input="Stop Server",
-                ai_response=result,
-                activity_type="dev_agent_tool",
+            self.memory.save_interaction(user_input="Stop Server", ai_response=result, activity_type="dev_agent_tool")
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_SUCCESS,
+                message=result,
+                evidence=f"Process exited and _is_port_in_use({VITE_PORT}) returned False."
             )
-            return result
 
         except Exception as e:
-            return f"[{self.name} ERROR] Failed to stop server: {e}"
+            return ToolResult(
+                status=VerificationStatus.VERIFIED_FAILURE,
+                message=f"[{self.name} ERROR] Failed to stop server: {e}",
+                evidence="Exception raised during process termination."
+            )
 
     # ─────────────────────────────────────────────────────────────────────────
     # Tool: Server Status
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _server_status(self) -> str:
+    def _server_status(self) -> ToolResult:
         """Reports whether the tracked server process and port are active."""
         server_key = "jarvis-ui"
         port_live = _is_port_in_use(VITE_PORT)
@@ -308,9 +331,14 @@ class DevAgent(BaseAgent):
             alive = proc.poll() is None
             pid_info = f", PID {proc.pid}, process {'alive' if alive else 'dead'}"
 
-        return (
+        msg = (
             f"[{self.name}] Server Status:\n"
             f"  • Tracked by JARVIS : {'Yes' + pid_info if tracked else 'No'}\n"
             f"  • Port {VITE_PORT} in use   : {'Yes ✅' if port_live else 'No ❌'}\n"
             f"  • URL               : http://localhost:{VITE_PORT}"
+        )
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_SUCCESS,
+            message=msg,
+            evidence=f"Tracked: {tracked}, Port Live: {port_live}."
         )
