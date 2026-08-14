@@ -172,12 +172,18 @@ class LLMEngine:
                         func_args_str = match.group(2)
                         print(f"[LLM_ENGINE RECOVERY] Extracted function: {func_name}, args: {func_args_str}")
                         
-                            if hasattr(tool_logic, 'execute'):
-                                # It's an ExecutionGate
-                                result = tool_logic.execute(func_name, **args)
-                            else:
-                                # Legacy raw dictionary fallback (not recommended)
-                                func_to_call = tool_logic.get(func_name)
+                        try:
+                            import json
+                            args = json.loads(func_args_str)
+                        except Exception:
+                            args = {}
+                            
+                        if hasattr(tool_logic, 'execute'):
+                            # It's an ExecutionGate
+                            result = tool_logic.execute(func_name, **args)
+                        else:
+                            # Legacy raw dictionary fallback (not recommended)
+                            func_to_call = tool_logic.get(func_name)
                                 if func_to_call:
                                     result = func_to_call(**args)
                                 else:

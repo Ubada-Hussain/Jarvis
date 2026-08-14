@@ -160,6 +160,44 @@ def _on_agent_status_change(status_dict: dict):
 from agents.master_agent import set_agent_status_callback
 set_agent_status_callback(_on_agent_status_change)
 
+# ─── Observability WebSocket Manager ───────────────────────────────────────────
+from core.observability import observability_manager
+
+class ObservabilityStatusManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        # Send current state immediately on connect
+        payload = {
+            "type": "observability_update",
+            "state": observability_manager.get_current_state(),
+            "event": None
+        }
+        await websocket.send_text(json.dumps(payload))
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, payload_dict: dict):
+        payload = json.dumps(payload_dict)
+        for connection in list(self.active_connections):
+            try:
+                await connection.send_text(payload)
+            except Exception:
+                self.active_connections.remove(connection)
+
+obs_ws_manager = ObservabilityStatusManager()
+
+def _on_observability_event(payload_dict: dict):
+    if main_loop and main_loop.is_running():
+        asyncio.run_coroutine_threadsafe(obs_ws_manager.broadcast(payload_dict), main_loop)
+
+observability_manager.register_callback(_on_observability_event)
+
 # Helper function to fire and forget async broadcast from sync code if needed, 
 # but FastAPI routes can just use await.
 def broadcast_state_sync(state: str):
@@ -204,6 +242,15 @@ async def agent_status_ws(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         agent_ws_manager.disconnect(websocket)
+
+@app.websocket("/api/ws/observability")
+async def observability_ws(websocket: WebSocket):
+    await obs_ws_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        obs_ws_manager.disconnect(websocket)
 
 @app.get("/api/approval/status", tags=["Approval"])
 async def approval_status():
