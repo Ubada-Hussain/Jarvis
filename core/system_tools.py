@@ -220,3 +220,85 @@ CREATE_PROCEDURE_TOOL = {
         }
     }
 }
+
+def refresh_environment_index(project_root: str) -> ToolResult:
+    try:
+        from core.environment_index import EnvironmentIndex
+        from core.verification import VerificationStatus
+        index = EnvironmentIndex()
+        knowledge = index.refresh(project_root)
+        
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_SUCCESS,
+            message=f"Environment index refreshed for {project_root}",
+            evidence=f"Scanned environment {knowledge.environment_id}. Languages: {len(knowledge.languages)}, Frameworks: {len(knowledge.frameworks)}"
+        )
+    except Exception as e:
+        from core.verification import VerificationStatus
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_FAILURE,
+            message=f"Failed to refresh environment index: {e}",
+            evidence="Exception raised during indexing."
+        )
+
+def query_environment_index(project_root: str, category: str = None) -> ToolResult:
+    try:
+        from core.environment_index import EnvironmentIndex
+        from core.verification import VerificationStatus
+        index = EnvironmentIndex()
+        facts = index.query(project_root, category)
+        
+        summary = "\n".join([f"- {f.fact}: {f.value} (Source: {f.source})" for f in facts])
+        
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_SUCCESS,
+            message=f"Found {len(facts)} facts for category '{category or 'all'}'.",
+            evidence=summary or "No facts found."
+        )
+    except Exception as e:
+        from core.verification import VerificationStatus
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_FAILURE,
+            message=f"Failed to query environment index: {e}",
+            evidence="Exception raised during query."
+        )
+
+REFRESH_ENV_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "refresh_environment_index",
+        "description": "Scans the project root to refresh the local Environment Knowledge Index. Use this when the user asks to scan or update project knowledge.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_root": {
+                    "type": "string",
+                    "description": "Absolute path to the project root directory to scan."
+                }
+            },
+            "required": ["project_root"]
+        }
+    }
+}
+
+QUERY_ENV_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "query_environment_index",
+        "description": "Queries the Environment Knowledge Index for facts about the project (e.g. languages, frameworks, dependencies).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_root": {
+                    "type": "string",
+                    "description": "Absolute path to the project root."
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Optional category to query (e.g., 'languages', 'frameworks', 'dependencies', 'entry_points', 'services'). If omitted, returns all."
+                }
+            },
+            "required": ["project_root"]
+        }
+    }
+}

@@ -3,6 +3,8 @@ import uuid
 from enum import Enum
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, field, asdict
+import os
+from core.environment_index import EnvironmentIndex
 
 class TaskState(str, Enum):
     PENDING = "PENDING"
@@ -51,6 +53,7 @@ class Planner:
     def __init__(self, llm_engine, memory_manager=None):
         self.llm = llm_engine
         self.memory = memory_manager
+        self.env_index = EnvironmentIndex()
 
     def _parse_llm_json(self, response: str) -> dict:
         response = response.strip()
@@ -99,10 +102,24 @@ class Planner:
         # 2. Fallback to LLM Planning
         agent_descriptions = "\n".join([f"- {name}: {desc}" for name, desc in available_agents.items()])
         
+        env_context = ""
+        project_root = os.getcwd()
+        env_knowledge = self.env_index.get_knowledge(project_root)
+        if env_knowledge:
+            languages = ", ".join([f.value for f in env_knowledge.languages])
+            frameworks = ", ".join([f.value for f in env_knowledge.frameworks])
+            entry_points = ", ".join([f.value for f in env_knowledge.entry_points])
+            env_context = (
+                f"\nENVIRONMENT CONTEXT (Project: {project_root}):\n"
+                f"- Languages: {languages or 'Unknown'}\n"
+                f"- Frameworks: {frameworks or 'Unknown'}\n"
+                f"- Entry Points: {entry_points or 'Unknown'}\n"
+            )
+        
         prompt = (
             f"You are the JARVIS Task Planner. Break down the user objective into a Task Graph with dependencies.\n"
             f"Objective: '{objective}'\n\n"
-            f"Available Agents:\n{agent_descriptions}\n\n"
+            f"Available Agents:\n{agent_descriptions}\n{env_context}\n"
             "RULES:\n"
             "1. You MUST ONLY assign tasks to the Available Agents listed above. If an agent does not exist for a subtask, assign it to 'NOT_AVAILABLE'.\n"
             "2. Complex tasks should be broken into sequential or parallel steps.\n"

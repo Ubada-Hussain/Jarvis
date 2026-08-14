@@ -315,3 +315,69 @@ class StructuredMemoryStore:
                 conn.close()
         except Exception as e:
             print(f"[MEMORY DB ERROR] {e}")
+
+class EnvironmentStore:
+    """
+    Handles structured storage for EnvironmentKnowledge using SQLite.
+    """
+    def __init__(self, db_path: str = "audit.db"):
+        self.db_path = db_path
+        self._lock = threading.Lock()
+        self._init_db()
+
+    def _init_db(self):
+        try:
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS environment_index (
+                            project_root TEXT PRIMARY KEY,
+                            environment_id TEXT,
+                            last_scanned TEXT,
+                            data TEXT
+                        )
+                    ''')
+                    conn.commit()
+                finally:
+                    conn.close()
+        except Exception as e:
+            print(f"[ENV DB ERROR] Failed to initialize Environment Index: {e}")
+
+    def save_environment(self, env_knowledge) -> bool:
+        """Saves an EnvironmentKnowledge model to SQLite."""
+        try:
+            d = env_knowledge.model_dump()
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "INSERT OR REPLACE INTO environment_index (project_root, environment_id, last_scanned, data) VALUES (?, ?, ?, ?)",
+                        (d["project_root"], d["environment_id"], d["last_scanned"], json.dumps(d))
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+            return True
+        except Exception as e:
+            print(f"[ENV DB ERROR] {e}")
+            return False
+
+    def get_environment(self, project_root: str):
+        """Retrieves an EnvironmentKnowledge dictionary for a project root."""
+        try:
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT data FROM environment_index WHERE project_root = ?", (project_root,))
+                row = cursor.fetchone()
+                conn.close()
+                if row:
+                    return json.loads(row["data"])
+                return None
+        except Exception as e:
+            print(f"[ENV DB ERROR] {e}")
+            return None
