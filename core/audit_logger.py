@@ -111,6 +111,51 @@ class SQLiteAuditLogger:
                             metadata TEXT
                         )
                     ''')
+                    
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS session_states (
+                            session_id TEXT PRIMARY KEY,
+                            conversation_id TEXT,
+                            session_status TEXT,
+                            current_request TEXT,
+                            current_intent TEXT,
+                            active_task_id TEXT,
+                            active_task_graph_id TEXT,
+                            active_node_id TEXT,
+                            active_agent TEXT,
+                            pending_clarification INTEGER,
+                            clarification_prompt TEXT,
+                            clarification_history TEXT,
+                            recent_verified_results TEXT,
+                            recent_failures TEXT,
+                            current_context_reference TEXT,
+                            user_approved_actions TEXT,
+                            created_at TEXT,
+                            updated_at TEXT,
+                            metadata TEXT
+                        )
+                    ''')
+                    
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS session_events (
+                            event_id TEXT PRIMARY KEY,
+                            timestamp TEXT,
+                            session_id TEXT,
+                            conversation_id TEXT,
+                            task_id TEXT,
+                            node_id TEXT,
+                            previous_state TEXT,
+                            new_state TEXT,
+                            reason TEXT,
+                            metadata TEXT
+                        )
+                    ''')
+                    
+                    cursor.execute("PRAGMA table_info(a2a_messages)")
+                    a2a_cols = [row[1] for row in cursor.fetchall()]
+                    if "session_id" not in a2a_cols:
+                        cursor.execute("ALTER TABLE a2a_messages ADD COLUMN session_id TEXT")
+                        
                     conn.commit()
                 finally:
                     conn.close()
@@ -303,3 +348,141 @@ class SQLiteAuditLogger:
         except Exception as e:
             print(f"[AUDIT QUERY RECOVERY ERROR] {e}")
             return []
+
+    def log_session_event(
+        self,
+        session_id: str,
+        previous_state: str,
+        new_state: str,
+        reason: str = "",
+        conversation_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        node_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """Logs an operational session transition event."""
+        try:
+            event_id = str(uuid.uuid4())
+            timestamp = datetime.utcnow().isoformat() + "Z"
+            meta_json = json.dumps(metadata or {})
+            
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        INSERT INTO session_events (
+                            event_id, timestamp, session_id, conversation_id, task_id, node_id,
+                            previous_state, new_state, reason, metadata
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (event_id, timestamp, session_id, conversation_id, task_id, node_id,
+                          previous_state, new_state, reason, meta_json))
+                    conn.commit()
+                finally:
+                    conn.close()
+            return True
+        except Exception as e:
+            print(f"[AUDIT LOGGER ERROR] Failed to log session event: {e}")
+            return False
+
+    def query_session_events(self, session_id: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+        """Queries session transition events."""
+        try:
+            query = "SELECT * FROM session_events WHERE 1=1"
+            params = []
+            if session_id:
+                query += " AND session_id = ?"
+                params.append(session_id)
+            query += " ORDER BY timestamp ASC LIMIT ?"
+            params.append(limit)
+            
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    cursor.execute(query, params)
+                    rows = cursor.fetchall()
+                    return [dict(row) for row in rows]
+                finally:
+                    conn.close()
+        except Exception as e:
+            print(f"[AUDIT QUERY SESSION EVENTS ERROR] {e}")
+            return []
+
+    def save_session_state(self, session_dict: Dict[str, Any]) -> bool:
+        """Persists or updates an active SessionState."""
+        try:
+            sid = session_dict.get("session_id")
+            if not sid:
+                return False
+            
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO session_states (
+                            session_id, conversation_id, session_status, current_request,
+                            current_intent, active_task_id, active_task_graph_id, active_node_id,
+                            active_agent, pending_clarification, clarification_prompt,
+                            clarification_history, recent_verified_results, recent_failures,
+                            current_context_reference, user_approved_actions, created_at,
+                            updated_at, metadata
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        sid,
+                        session_dict.get("conversation_id"),
+                        session_dict.get("session_status"),
+                        session_dict.get("current_request", ""),
+                        json.dumps(session_dict.get("current_intent") or {}),
+                        session_dict.get("active_task_id"),
+                        session_dict.get("active_task_graph_id"),
+                        session_dict.get("active_node_id"),
+                        session_dict.get("active_agent"),
+                        1 if session_dict.get("pending_clarification") else 0,
+                        session_dict.get("clarification_prompt"),
+                        json.dumps(session_dict.get("clarification_history") or []),
+                        json.dumps(session_dict.get("recent_verified_results") or []),
+                        json.dumps(session_dict.get("recent_failures") or []),
+                        json.dumps(session_dict.get("current_context_reference") or {}),
+                        json.dumps(session_dict.get("user_approved_actions") or []),
+                        session_dict.get("created_at"),
+                        session_dict.get("updated_at"),
+                        json.dumps(session_dict.get("metadata") or {})
+                    ))
+                    conn.commit()
+                finally:
+                    conn.close()
+            return True
+        except Exception as e:
+            print(f"[AUDIT SAVE SESSION ERROR] {e}")
+            return False
+
+    def load_session_state(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Loads persisted SessionState by session_id."""
+        try:
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT * FROM session_states WHERE session_id = ?", (session_id,))
+                    row = cursor.fetchone()
+                    if not row:
+                        return None
+                    d = dict(row)
+                    d["pending_clarification"] = bool(d.get("pending_clarification"))
+                    for key in ["current_intent", "clarification_history", "recent_verified_results",
+                                "recent_failures", "current_context_reference", "user_approved_actions", "metadata"]:
+                        if d.get(key) and isinstance(d[key], str):
+                            try:
+                                d[key] = json.loads(d[key])
+                            except Exception:
+                                pass
+                    return d
+                finally:
+                    conn.close()
+        except Exception as e:
+            print(f"[AUDIT LOAD SESSION ERROR] {e}")
+            return None

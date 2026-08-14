@@ -113,7 +113,7 @@ class MasterAgent(BaseAgent):
 
         pass # Moved to DependencyScheduler
 
-    def execute(self, task: str) -> str:
+    def execute(self, task: str, session_id: Optional[str] = None) -> str:
         """
         Analyzes the task, chooses the best sub-agent(s), and delegates execution.
         Supports PARALLEL dispatch when multiple agents are needed.
@@ -139,23 +139,57 @@ class MasterAgent(BaseAgent):
             finally:
                 _update_agent_status("ObserverAgent", "idle")
 
-        print(f"\n[{self.name}] Resolving context and analyzing task intent...")
+        from core.session_state import session_manager, SessionStatus
+        
+        # Step 0: Session State Management (Task 13)
+        if session_id:
+            session = session_manager.get_session(session_id)
+            if not session:
+                session = session_manager.create_session(initial_request=task)
+                session_id = session.session_id
+            else:
+                # If resuming from clarification or completing new task
+                if session.session_status == SessionStatus.WAITING_FOR_CLARIFICATION:
+                    session_manager.update_session(
+                        session_id,
+                        pending_clarification=False,
+                        clarification_history=session.clarification_history + [{"clarification": task}]
+                    )
+                session_manager.update_session(session_id, current_request=task)
+        else:
+            session = session_manager.create_session(initial_request=task)
+            session_id = session.session_id
+
+        print(f"\n[{self.name}] Resolving context and analyzing task intent (Session: {session_id})...")
+        session_manager.transition_state(session_id, SessionStatus.PLANNING, reason="Resolving context and planning", task_id=task_id)
         
         # Build available agents dict
         available_agents = {name: agent.description for name, agent in self.agents.items() if name != "ObserverAgent"}
         
         # Step 1: Deterministic Context & Intent Resolution (Task 12)
         structured_intent = self.context_resolver.resolve(task, available_agents)
+        session_manager.update_session(session_id, current_intent=structured_intent.model_dump())
         
         # Step 2: Handle ambiguous requests safely without risky execution
         if structured_intent.ambiguity and structured_intent.requires_clarification:
             clarification_msg = f"I need a bit more clarification to assist you properly: {'; '.join(structured_intent.ambiguity_reasons)}"
+            session_manager.update_session(
+                session_id,
+                pending_clarification=True,
+                clarification_prompt=clarification_msg
+            )
+            session_manager.transition_state(
+                session_id,
+                SessionStatus.WAITING_FOR_CLARIFICATION,
+                reason="Request ambiguous; clarification required"
+            )
             observability_manager.end_task(status="COMPLETED")
             return clarification_msg
             
         try:
             # Step 3: Pass StructuredIntent to Planner to construct Task Graph
             graph = self.planner.create_graph(structured_intent, available_agents)
+            session_manager.update_session(session_id, active_task_graph_id=graph.graph_id)
             
             print(f"[{self.name}] Task Graph created with {len(graph.nodes)} nodes.")
             for node_id, node in graph.nodes.items():
@@ -163,8 +197,8 @@ class MasterAgent(BaseAgent):
                 
             scheduler = DependencyScheduler(self.agents, self.audit_logger)
             
-            # Start execution of the graph
-            result_summary = scheduler.execute_graph(graph)
+            # Start execution of the graph with session tracking
+            result_summary = scheduler.execute_graph(graph, session_id=session_id)
             
             # Synthesize final response
             observability_manager.update_agent("MasterAgent")

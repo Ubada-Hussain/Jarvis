@@ -51,6 +51,7 @@ class FileChange(BaseModel):
 
 class AgentMessage(BaseModel):
     message_id: str
+    session_id: Optional[str] = None
     task_id: Optional[str] = None
     node_id: Optional[str] = None
     parent_task_id: Optional[str] = None

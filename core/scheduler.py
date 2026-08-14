@@ -16,7 +16,7 @@ class DependencyScheduler:
     Dispatches safe tasks in parallel.
     Uses Audit Logger and RecoveryManager to determine VerificationStatus-driven completion and safe retries.
     """
-    def __init__(self, agents_dict: Dict[str, Any], audit_logger):
+    def __init__(self, agents_dict: Dict[str, Any], audit_logger, session_manager=None):
         self.agents = agents_dict
         self.audit_logger = audit_logger
         self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="sched")
@@ -26,15 +26,26 @@ class DependencyScheduler:
         self.a2a_dispatcher = A2ADispatcher(self.agents, self.audit_logger)
         self.memory_manager = MemoryManager()
         self.recovery_manager = RecoveryManager(default_max_retries=2)
+        from core.session_state import session_manager as global_session_mgr
+        self.session_manager = session_manager or global_session_mgr
 
-    def execute_graph(self, graph: TaskGraph) -> str:
+    def execute_graph(self, graph: TaskGraph, session_id: Optional[str] = None) -> str:
         """
         Synchronously block and execute the graph until it terminates.
+        Integrates with SessionState (Task 13) to record operational status.
         """
+        from core.session_state import SessionStatus
+        if session_id:
+            try:
+                self.session_manager.transition_state(session_id, SessionStatus.EXECUTING, task_id=graph.graph_id)
+                self.session_manager.update_session(session_id, active_task_graph_id=graph.graph_id)
+            except Exception:
+                pass
+                
         observability_manager.emit_event(ObservabilityEvent(
             task_id=graph.graph_id,
             event_type="GRAPH_STARTED",
-            metadata={"objective": graph.objective, "node_count": len(graph.nodes)}
+            metadata={"objective": graph.objective, "node_count": len(graph.nodes), "session_id": session_id}
         ))
         
         # Publish initial graph state to observability UI
@@ -42,6 +53,13 @@ class DependencyScheduler:
         observability_manager.emit_event(ObservabilityEvent(event_type="GRAPH_UPDATED"))
 
         while True:
+            # Check if session was cancelled
+            if session_id:
+                sess = self.session_manager.get_session(session_id)
+                if sess and sess.session_status == SessionStatus.CANCELLED:
+                    print(f"[Scheduler] Session '{session_id}' was CANCELLED. Halting graph execution.")
+                    break
+
             with self._lock:
                 self._update_states(graph)
                 ready_nodes = [n for n in graph.nodes.values() if n.status == TaskState.READY]
@@ -57,7 +75,7 @@ class DependencyScheduler:
                 # Dispatch READY nodes
                 for node in ready_nodes:
                     node.status = TaskState.RUNNING
-                    self.active_futures[node.node_id] = self.executor.submit(self._execute_node, node, graph.graph_id)
+                    self.active_futures[node.node_id] = self.executor.submit(self._execute_node, node, graph.graph_id, session_id)
                     
                 self._sync_observability(graph)
                 
@@ -69,10 +87,21 @@ class DependencyScheduler:
         
         self._form_episodic_memories(graph)
         
+        if session_id:
+            try:
+                sess = self.session_manager.get_session(session_id)
+                if sess and sess.session_status != SessionStatus.CANCELLED:
+                    if success_count == total and total > 0:
+                        self.session_manager.transition_state(session_id, SessionStatus.COMPLETED, reason="All tasks completed successfully", task_id=graph.graph_id)
+                    else:
+                        self.session_manager.transition_state(session_id, SessionStatus.FAILED, reason=f"{total - success_count} tasks failed", task_id=graph.graph_id)
+            except Exception:
+                pass
+
         observability_manager.emit_event(ObservabilityEvent(
             task_id=graph.graph_id,
             event_type="GRAPH_COMPLETED",
-            metadata={"completed": success_count, "total": total}
+            metadata={"completed": success_count, "total": total, "session_id": session_id}
         ))
         
         if success_count < total:
@@ -137,10 +166,17 @@ class DependencyScheduler:
                 else:
                     node.status = TaskState.WAITING_FOR_DEPENDENCY
 
-    def _execute_node(self, node: TaskNode, graph_id: str):
-        """Thread worker that executes a specific node with Verification-First Recovery Policy."""
+    def _execute_node(self, node: TaskNode, graph_id: str, session_id: Optional[str] = None):
+        """Thread worker that executes a specific node with Verification-First Recovery Policy and Session tracking."""
+        from core.session_state import session_manager, SessionStatus
         agent_name = node.agent
         max_retries = node.max_retries or 2
+        
+        if session_id:
+            try:
+                session_manager.update_session(session_id, active_node_id=node.node_id, active_agent=agent_name)
+            except Exception:
+                pass
         
         while node.attempts < max_retries:
             node.attempts += 1
@@ -148,6 +184,11 @@ class DependencyScheduler:
             
             if is_retry:
                 node.status = TaskState.RETRYING
+                if session_id:
+                    try:
+                        session_manager.transition_state(session_id, SessionStatus.RECOVERING, reason="Retrying failed node", node_id=node.node_id)
+                    except Exception:
+                        pass
                 observability_manager.emit_event(ObservabilityEvent(
                     task_id=graph_id,
                     event_type="RETRY_STARTED",
@@ -164,6 +205,7 @@ class DependencyScheduler:
             
             req_msg = AgentMessage(
                 message_id=str(uuid.uuid4()),
+                session_id=session_id,
                 task_id=graph_id,
                 node_id=node.node_id,
                 sender_agent="Scheduler",
@@ -184,6 +226,12 @@ class DependencyScheduler:
                     node.status = TaskState.COMPLETED
                     node.verification_status = "VERIFIED_SUCCESS"
                     node.error = ""
+                    
+                    if session_id:
+                        try:
+                            session_manager.add_verified_result(session_id, node.node_id, agent_name, node.result, resp_msg.evidence or "Audit Log")
+                        except Exception:
+                            pass
                     
                     if is_retry:
                         self.audit_logger.log_recovery_event(
@@ -218,6 +266,12 @@ class DependencyScheduler:
                         permission_status=permission_status
                     )
                     node.failure_category = category.value
+                    
+                    if session_id:
+                        try:
+                            session_manager.add_failure(session_id, node.node_id, agent_name, error_msg, category=category.value)
+                        except Exception:
+                            pass
                     
                     decision = self.recovery_manager.evaluate_recovery(
                         category=category,
