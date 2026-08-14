@@ -141,7 +141,6 @@ DELETE_FILE_TOOL = {
             },
             "required": ["file_path"]
         }
-        }
     }
 }
 

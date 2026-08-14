@@ -23,6 +23,7 @@ class AuditEvent:
     result: str
     evidence: str
     duration_ms: int
+    files_changed: str = ""
 
 class SQLiteAuditLogger:
     """
@@ -57,9 +58,15 @@ class SQLiteAuditLogger:
                             verification_status TEXT,
                             result TEXT,
                             evidence TEXT,
-                            duration_ms INTEGER
+                            duration_ms INTEGER,
+                            files_changed TEXT
                         )
                     ''')
+                    # Migrate existing table if files_changed column is missing
+                    cursor.execute("PRAGMA table_info(audit_events)")
+                    columns = [row[1] for row in cursor.fetchall()]
+                    if "files_changed" not in columns:
+                        cursor.execute("ALTER TABLE audit_events ADD COLUMN files_changed TEXT")
                     
                     cursor.execute('''
                         CREATE TABLE IF NOT EXISTS a2a_messages (

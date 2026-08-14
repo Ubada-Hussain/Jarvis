@@ -97,6 +97,8 @@ class ExecutionGate:
             event.duration_ms = duration
             event.result = result_obj.message
             event.evidence = result_obj.evidence
+            if hasattr(result_obj, 'files_changed') and result_obj.files_changed:
+                event.files_changed = json.dumps(result_obj.files_changed)
             self.audit_logger.log_event(event)
             
             observability_manager.emit_event(ObservabilityEvent(

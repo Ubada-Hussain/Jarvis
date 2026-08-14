@@ -10,6 +10,8 @@ from core.llm_engine import LLMEngine
 from core.memory_manager import MemoryManager
 from agents.base_agent import BaseAgent
 from agents.dev_agent import DevAgent
+from agents.backend_agent import BackendAgent
+from agents.frontend_agent import FrontendAgent
 from agents.academic_agent import AcademicAgent
 from agents.system_agent import SystemAgent
 from agents.observer_agent import ObserverAgent
@@ -23,6 +25,8 @@ import uuid
 # ─── Global agent status tracker ──────────────────────────────────────────────
 # This dict is read by the WS endpoint in api_server.py to push live updates.
 agent_status: Dict[str, str] = {
+    "BE": "idle",
+    "FE": "idle",
     "DEV": "idle",
     "SYS": "idle",
     "ACAD": "idle",
@@ -31,6 +35,8 @@ agent_status: Dict[str, str] = {
 
 # Mapping from class names to short display IDs
 _AGENT_ID_MAP = {
+    "BackendAgent": "BE",
+    "FrontendAgent": "FE",
     "DevAgent": "DEV",
     "SystemAgent": "SYS",
     "AcademicAgent": "ACAD",
@@ -67,6 +73,8 @@ class MasterAgent(BaseAgent):
         
         # Initialize standard agents
         self.agents: Dict[str, BaseAgent] = {
+            "BackendAgent": BackendAgent(llm, memory, approval_manager),
+            "FrontendAgent": FrontendAgent(llm, memory, approval_manager),
             "DevAgent": DevAgent(llm, memory, approval_manager),
             "AcademicAgent": AcademicAgent(llm, memory, approval_manager),
             "SystemAgent": SystemAgent(llm, memory, approval_manager),
