@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>JARVIS Command Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&amp;family=Montserrat:wght@400;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-lowest": "#0e0e12",
+                    "surface-container-highest": "#353439",
+                    "inverse-primary": "#bf002a",
+                    "surface-container": "#1f1f24",
+                    "on-tertiary-container": "#3c2500",
+                    "on-error-container": "#ffdad6",
+                    "secondary-container": "#00c5db",
+                    "outline": "#ac8887",
+                    "on-secondary": "#00363d",
+                    "secondary-fixed-dim": "#37d9ef",
+                    "background": "#131317",
+                    "on-secondary-fixed-variant": "#004f58",
+                    "tertiary": "#ffb955",
+                    "surface-tint": "#ffb3b2",
+                    "on-primary": "#680012",
+                    "secondary-fixed": "#9af0ff",
+                    "surface-container-low": "#1b1b20",
+                    "primary-fixed-dim": "#ffb3b2",
+                    "inverse-on-surface": "#303035",
+                    "secondary": "#44e2f8",
+                    "tertiary-fixed-dim": "#ffb955",
+                    "on-tertiary-fixed-variant": "#633f00",
+                    "on-secondary-fixed": "#001f24",
+                    "error": "#ffb4ab",
+                    "on-secondary-container": "#004d56",
+                    "tertiary-fixed": "#ffddb4",
+                    "on-primary-container": "#5b000f",
+                    "surface-variant": "#353439",
+                    "on-surface": "#e4e1e8",
+                    "on-error": "#690005",
+                    "surface": "#131317",
+                    "surface-dim": "#131317",
+                    "primary-container": "#ff525c",
+                    "on-surface-variant": "#e5bdbc",
+                    "surface-bright": "#39393e",
+                    "primary-fixed": "#ffdad8",
+                    "surface-container-high": "#2a292e",
+                    "tertiary-container": "#c68200",
+                    "on-tertiary": "#452b00",
+                    "on-background": "#e4e1e8",
+                    "outline-variant": "#5c3f3f",
+                    "on-primary-fixed": "#410008",
+                    "primary": "#ffb3b2",
+                    "on-primary-fixed-variant": "#92001e",
+                    "inverse-surface": "#e4e1e8",
+                    "error-container": "#93000a",
+                    "on-tertiary-fixed": "#291800"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "margin-mobile": "16px",
+                    "container-max": "1440px",
+                    "margin-desktop": "40px",
+                    "gutter": "16px",
+                    "unit": "4px"
+            },
+            "fontFamily": {
+                    "body-md": [
+                            "JetBrains Mono"
+                    ],
+                    "headline-lg": [
+                            "Montserrat"
+                    ],
+                    "display-lg": [
+                            "Montserrat"
+                    ],
+                    "body-lg": [
+                            "JetBrains Mono"
+                    ],
+                    "label-caps": [
+                            "JetBrains Mono"
+                    ],
+                    "headline-md": [
+                            "Montserrat"
+                    ],
+                    "terminal-sm": [
+                            "JetBrains Mono"
+                    ]
+            },
+            "fontSize": {
+                    "body-md": [
+                            "14px",
+                            {
+                                    "lineHeight": "1.6",
+                                    "letterSpacing": "0px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "headline-lg": [
+                            "32px",
+                            {
+                                    "lineHeight": "1.2",
+                                    "letterSpacing": "0.05em",
+                                    "fontWeight": "700"
+                            }
+                    ],
+                    "display-lg": [
+                            "48px",
+                            {
+                                    "lineHeight": "1.1",
+                                    "letterSpacing": "0.1em",
+                                    "fontWeight": "800"
+                            }
+                    ],
+                    "body-lg": [
+                            "16px",
+                            {
+                                    "lineHeight": "1.6",
+                                    "letterSpacing": "0px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "label-caps": [
+                            "12px",
+                            {
+                                    "lineHeight": "1",
+                                    "letterSpacing": "0.15em",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "headline-md": [
+                            "24px",
+                            {
+                                    "lineHeight": "1.3",
+                                    "letterSpacing": "0.05em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "terminal-sm": [
+                            "12px",
+                            {
+                                    "lineHeight": "1.4",
+                                    "fontWeight": "400"
+                            }
+                    ]
+            }
+    },
+        },
+      }
+    </script>
+<style>
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.on-background');
+        }
+        
+        .fui-border {
+            border: 1px solid rgba(68, 226, 248, 0.2);
+        }
+        
+        .fui-glow {
+            box-shadow: 0 0 15px rgba(68, 226, 248, 0.2);
+        }
+        
+        .fui-glow-active {
+            box-shadow: 0 0 15px rgba(255, 179, 178, 0.3);
+        }
+
+        .fui-panel {
+            background-color: rgba(15, 17, 23, 0.8);
+            backdrop-filter: blur(10px);
+        }
+
+        .dashed-connector {
+            border-top: 1px dashed rgba(68, 226, 248, 0.2);
+        }
+        
+        .dashed-connector-v {
+            border-left: 1px dashed rgba(68, 226, 248, 0.2);
+        }
+
+        @keyframes pulse-amber {
+            0% { box-shadow: 0 0 0 0 rgba(255, 185, 85, 0.7); }
+            70% { box-shadow: 0 0 0 6px rgba(255, 185, 85, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 185, 85, 0); }
+        }
+        .amber-dot {
+            animation: pulse-amber 2s infinite;
+        }
+
+        /* Custom scrollbar for terminal */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(68, 226, 248, 0.3);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(68, 226, 248, 0.6);
+        }
+
+        @keyframes breathe {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-3px); }
+        }
+        .sprite-breathe {
+            animation: breathe 3s ease-in-out infinite;
+        }
+        .sprite-delay-1 { animation-delay: 0s; }
+        .sprite-delay-2 { animation-delay: 0.7s; }
+        .sprite-delay-3 { animation-delay: 1.4s; }
+        .sprite-delay-4 { animation-delay: 2.1s; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col p-4 md:p-margin-desktop gap-gutter box-border">
+<!-- TopAppBar -->
+<header class="bg-background/80 backdrop-blur-md text-secondary font-headline-md text-headline-md w-full top-0 sticky border-b border-secondary/20 shadow-[0_0_15px_#44e2f833] flex justify-between items-center px-margin-desktop py-4 z-50">
+<div class="font-display-lg text-display-lg tracking-widest bg-gradient-to-r from-primary to-[#ff3b4e] bg-clip-text text-transparent drop-shadow-[0_0_15px_#ffb3b233]">
+            JARVIS
+        </div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 border border-tertiary/30 px-3 py-1 rounded bg-tertiary/10">
+<div class="w-2 h-2 rounded-full bg-tertiary amber-dot"></div>
+<span class="font-label-caps text-label-caps text-tertiary">BACKEND ONLINE</span>
+</div>
+<div class="flex gap-4">
+<span class="material-symbols-outlined text-secondary hover:bg-secondary/10 hover:text-secondary transition-all scale-95 duration-150 p-2 rounded cursor-pointer" data-icon="sensors">sensors</span>
+<span class="material-symbols-outlined text-secondary hover:bg-secondary/10 hover:text-secondary transition-all scale-95 duration-150 p-2 rounded cursor-pointer" data-icon="settings_input_component">settings_input_component</span>
+</div>
+</div>
+</header>
+<div class="flex-grow flex flex-col md:flex-row gap-gutter">
+<!-- Left Column -->
+<div class="w-full md:w-1/2 flex flex-col gap-gutter">
+<!-- SYS.CORE Section -->
+<div class="fui-panel fui-border rounded relative flex-grow min-h-[400px] flex flex-col p-4">
+<div class="absolute top-0 left-0 border-b border-r border-secondary/20 px-2 py-1 bg-secondary/10 font-label-caps text-label-caps text-secondary z-10">
+                    SEC-01 // SYS.CORE
+                </div>
+<div class="relative flex-grow flex items-center justify-center mt-8">
+<!-- 3D Neural Core Animation -->
+<div class="absolute inset-0 w-full h-full z-0 opacity-80 flex items-center justify-center">
+<div class="w-[300px] h-[300px] relative">
+<iframe class="w-full h-full border-0" src="data:text/html;charset=utf-8,{{DATA:SCREEN:SCREEN_6|base64}}"></iframe>
+</div>
+</div>
+<!-- Nodes Container -->
+<div class="relative w-full h-full max-w-[400px] max-h-[400px] z-10 pointer-events-none">
+<!-- Connecting Lines (Decorative representation) -->
+<div class="absolute inset-0 flex items-center justify-center">
+<div class="w-[80%] h-px dashed-connector absolute"></div>
+<div class="h-[80%] w-px dashed-connector-v absolute"></div>
+</div>
+<!-- Node: Memory (Top) -->
+<div class="absolute top-8 left-1/2 -translate-x-1/2 pointer-events-auto">
+<div class="border border-secondary/40 bg-background/90 px-3 py-1 rounded font-terminal-sm text-terminal-sm text-secondary flex items-center gap-2 shadow-[0_0_10px_#44e2f833]">
+<div class="w-1.5 h-1.5 bg-secondary pulse"></div> MEMORY
+                            </div>
+</div>
+<!-- Node: Skills (Right) -->
+<div class="absolute top-1/2 right-8 -translate-y-1/2 pointer-events-auto">
+<div class="border border-secondary/40 bg-background/90 px-3 py-1 rounded font-terminal-sm text-terminal-sm text-secondary flex items-center gap-2 shadow-[0_0_10px_#44e2f833]">
+<div class="w-1.5 h-1.5 bg-secondary pulse"></div> SKILLS
+                            </div>
+</div>
+<!-- Node: Settings (Bottom) -->
+<div class="absolute bottom-8 left-1/2 -translate-x-1/2 pointer-events-auto">
+<div class="border border-secondary/40 bg-background/90 px-3 py-1 rounded font-terminal-sm text-terminal-sm text-secondary flex items-center gap-2 shadow-[0_0_10px_#44e2f833]">
+<span class="material-symbols-outlined text-[14px]">settings</span> SETTINGS
+                            </div>
+</div>
+<!-- Node: Soul (Left) -->
+<div class="absolute top-1/2 left-8 -translate-y-1/2 pointer-events-auto">
+<div class="border border-primary/40 bg-background/90 px-3 py-1 rounded font-terminal-sm text-terminal-sm text-primary flex items-center gap-2 shadow-[0_0_10px_#ffb3b233]">
+<div class="w-1.5 h-1.5 bg-primary pulse"></div> SOUL
+                            </div>
+</div>
+</div>
+</div>
+<!-- State Toggles -->
+<div class="mt-auto pt-4 flex justify-center gap-4 z-10">
+<button class="px-4 py-1.5 rounded-full border border-secondary/30 font-label-caps text-label-caps text-on-surface-variant hover:bg-secondary/10 hover:text-secondary transition-all">IDLE</button>
+<button class="px-4 py-1.5 rounded-full border border-[#ff3b4e] bg-[#ff3b4e]/20 font-label-caps text-label-caps text-[#ff3b4e] shadow-[0_0_15px_rgba(255,59,78,0.4)] transition-all flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-[#ff3b4e] animate-pulse"></div> LISTENING
+                    </button>
+<button class="px-4 py-1.5 rounded-full border border-secondary/30 font-label-caps text-label-caps text-on-surface-variant hover:bg-secondary/10 hover:text-secondary transition-all">THINKING</button>
+<button class="px-4 py-1.5 rounded-full border border-secondary/30 font-label-caps text-label-caps text-on-surface-variant hover:bg-secondary/10 hover:text-secondary transition-all">SPEAKING</button>
+</div>
+</div>
+<!-- AGENT TOWN Section -->
+<div class="fui-panel fui-border rounded relative h-[300px] flex flex-col p-4 overflow-hidden">
+<div class="absolute top-0 left-0 border-b border-r border-secondary/20 px-2 py-1 bg-secondary/10 font-label-caps text-label-caps text-secondary z-10">
+                    SEC-02 // AGENT TOWN
+                </div>
+<div class="mt-8 flex-grow relative w-full h-full border border-secondary/10 bg-surface-container-lowest/50 rounded overflow-hidden">
+<!-- Background representing 2D top-down view -->
+<div class="absolute inset-0 bg-cover bg-center opacity-60" data-alt="A top-down 2D pixel-art style map of a small office or apartment space. The map is divided into two main areas: a 'Gaming Lounge' on the left with a TV and couch, and an 'Operations Office' on the right with desks and monitors. The style is dark, cinematic, and slightly retro-futuristic with cyan and crimson glowing accents on terminal screens. The overall tone is technical and precise." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBjxZFWbUYi-1n7Rxq5u9p1vk2znEAdZ1_FpB8VqxaIxMmqPfZPgx0brCqLoSannbeNzjAaz7oYBvAn0kxgdWEa9iXGJ3Cri0DqNDkSMw-rUX1qZu93qtHjw_8aXu7RdTZfAZsYqCzU1Uo-L-ZVZuIiNONz7WQWdHxG_WLEmmNNiUjZVsBsUaY9xcTtv_-8knt4zl06BY7wDzbZ8Et-ZCA-rexAW2swwYZIC0I6AuTfpbefvkCyS4eI')"></div>
+<!-- Simulated Layout Overlay -->
+<div class="absolute inset-0 flex">
+<!-- Gaming Lounge (Left) -->
+<div class="w-1/2 h-full border-r border-dashed border-secondary/20 relative">
+<div class="absolute top-2 left-2 font-terminal-sm text-terminal-sm text-secondary/70">LOUNGE</div>
+<!-- Character: Cyan -->
+<div class="absolute top-[50%] left-[30%] w-8 h-8 sprite-breathe sprite-delay-1 bg-no-repeat" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCjMLZcpG7IYb_aI2DwfozukcK9hF38_5LEbZLuuJEXCvkc7bJ-8KnQBbrLG1KWwKEdFWSn7pVevvmeFXWlBv16rSwcnrof0ck-TEgx_o1SbNDAYw55Enn-lHdFbvJcbMxbEX1Zmk_1FfV4K1NXu9Vsvygf74u_CpSm1SZXmSDd2zVxqFR82cnTlfMgyk8rHftqi11gcrKnAmD8UlZoKPXtQwjRW4hfr3ta0gnSzmoMvi-RrEeQY5uD'); background-size: 200% 200%; background-position: 0% 0%;"></div>
+<!-- Character: Amber -->
+<div class="absolute top-[60%] left-[60%] w-8 h-8 sprite-breathe sprite-delay-2 bg-no-repeat" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCjMLZcpG7IYb_aI2DwfozukcK9hF38_5LEbZLuuJEXCvkc7bJ-8KnQBbrLG1KWwKEdFWSn7pVevvmeFXWlBv16rSwcnrof0ck-TEgx_o1SbNDAYw55Enn-lHdFbvJcbMxbEX1Zmk_1FfV4K1NXu9Vsvygf74u_CpSm1SZXmSDd2zVxqFR82cnTlfMgyk8rHftqi11gcrKnAmD8UlZoKPXtQwjRW4hfr3ta0gnSzmoMvi-RrEeQY5uD'); background-size: 200% 200%; background-position: 100% 100%;"></div>
+</div>
+<!-- Operations Office (Right) -->
+<div class="w-1/2 h-full relative">
+<div class="absolute top-2 right-2 font-terminal-sm text-terminal-sm text-secondary/70">OPS</div>
+<!-- Character: Red -->
+<div class="absolute top-[45%] left-[35%] w-8 h-8 sprite-breathe sprite-delay-3 bg-no-repeat" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCjMLZcpG7IYb_aI2DwfozukcK9hF38_5LEbZLuuJEXCvkc7bJ-8KnQBbrLG1KWwKEdFWSn7pVevvmeFXWlBv16rSwcnrof0ck-TEgx_o1SbNDAYw55Enn-lHdFbvJcbMxbEX1Zmk_1FfV4K1NXu9Vsvygf74u_CpSm1SZXmSDd2zVxqFR82cnTlfMgyk8rHftqi11gcrKnAmD8UlZoKPXtQwjRW4hfr3ta0gnSzmoMvi-RrEeQY5uD'); background-size: 200% 200%; background-position: 100% 0%;"></div>
+<!-- Character: Green -->
+<div class="absolute top-[65%] left-[55%] w-8 h-8 sprite-breathe sprite-delay-4 bg-no-repeat" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCjMLZcpG7IYb_aI2DwfozukcK9hF38_5LEbZLuuJEXCvkc7bJ-8KnQBbrLG1KWwKEdFWSn7pVevvmeFXWlBv16rSwcnrof0ck-TEgx_o1SbNDAYw55Enn-lHdFbvJcbMxbEX1Zmk_1FfV4K1NXu9Vsvygf74u_CpSm1SZXmSDd2zVxqFR82cnTlfMgyk8rHftqi11gcrKnAmD8UlZoKPXtQwjRW4hfr3ta0gnSzmoMvi-RrEeQY5uD'); background-size: 200% 200%; background-position: 0% 100%;"></div>
+<!-- Desks representation via CSS blocks to ensure structural layout if image fails -->
+<div class="absolute bottom-4 right-4 w-24 h-16 border border-secondary/30 bg-secondary/5 rounded-sm flex flex-col justify-between p-1">
+<div class="w-8 h-4 bg-secondary/20 border border-secondary/50 rounded-sm"></div>
+<div class="w-8 h-4 bg-secondary/20 border border-secondary/50 rounded-sm self-end"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column: TERMINAL Section -->
+<div class="w-full md:w-1/2 flex flex-col fui-panel fui-border rounded relative overflow-hidden min-h-[600px]">
+<div class="absolute top-0 left-0 border-b border-r border-secondary/20 px-2 py-1 bg-secondary/10 font-label-caps text-label-caps text-secondary z-10 w-full flex justify-between">
+<span>SEC-03 // TERMINAL_LOG</span>
+<span class="text-on-surface-variant/60">SYS_TIME: 14:02:45 UTC</span>
+</div>
+<!-- Chat Log Area -->
+<div class="flex-grow mt-10 p-4 overflow-y-auto flex flex-col gap-4 font-body-md text-body-md font-mono">
+<!-- System Init Message -->
+<div class="text-secondary/60 text-terminal-sm font-terminal-sm border-l-2 border-secondary/30 pl-2">
+                    [14:00:01] SYSTEM: Connection established. Initializing core protocols... DONE.
+                </div>
+<!-- User Message -->
+<div class="flex flex-col items-end w-full">
+<div class="flex items-center gap-2 mb-1">
+<span class="font-terminal-sm text-terminal-sm text-on-surface-variant/70">USER [14:01:12]</span>
+</div>
+<div class="bg-surface-container-high border border-surface-variant px-4 py-2 rounded text-on-surface max-w-[80%]">
+                        Initiate diagnostic sweep on sector 7.
+                    </div>
+</div>
+<!-- JARVIS Message -->
+<div class="flex flex-col items-start w-full">
+<div class="flex items-center gap-2 mb-1">
+<span class="font-terminal-sm text-terminal-sm text-primary">[SYS.CORE] JARVIS [14:01:15]</span>
+</div>
+<div class="bg-primary/5 border border-primary/20 px-4 py-2 rounded text-on-surface max-w-[80%] shadow-[0_0_10px_#ffb3b211]">
+                        Diagnostic sweep initiated. Scanning Sector 7 memory banks...
+                        <div class="mt-2 text-secondary font-terminal-sm text-terminal-sm">
+                            &gt; MEM_BANK_01: NOMINAL<br/>
+                            &gt; MEM_BANK_02: NOMINAL<br/>
+                            &gt; MEM_BANK_03: FRAGMENTATION DETECTED
+                        </div>
+                        Shall I run a defragmentation routine?
+                    </div>
+</div>
+<!-- User Message -->
+<div class="flex flex-col items-end w-full">
+<div class="flex items-center gap-2 mb-1">
+<span class="font-terminal-sm text-terminal-sm text-on-surface-variant/70">USER [14:02:30]</span>
+</div>
+<div class="bg-surface-container-high border border-surface-variant px-4 py-2 rounded text-on-surface max-w-[80%]">
+                        Yes, proceed with defragmentation. Keep me updated.
+                    </div>
+</div>
+<!-- Active processing indicator -->
+<div class="text-secondary/60 text-terminal-sm font-terminal-sm border-l-2 border-secondary/30 pl-2 flex items-center gap-2 mt-2">
+                    [14:02:45] SYSTEM: Awaiting input <span class="animate-pulse font-bold">_</span>
+</div>
+</div>
+<!-- Bottom Dock: Input Area -->
+<div class="border-t border-secondary/20 p-4 bg-background/50 backdrop-blur-md">
+<div class="flex items-center gap-3">
+<!-- Mic Button -->
+<button class="w-10 h-10 rounded-full border border-secondary/50 flex items-center justify-center bg-secondary/10 text-secondary hover:bg-secondary/20 hover:shadow-[0_0_10px_#44e2f833] transition-all flex-shrink-0">
+<span class="material-symbols-outlined text-[20px]">mic</span>
+</button>
+<!-- Waveform (Animated SVG Placeholder) -->
+<div class="w-24 h-10 border border-secondary/20 rounded bg-surface-container-lowest/50 flex items-center justify-center overflow-hidden flex-shrink-0 relative">
+</div>
+<!-- Input Field -->
+<div class="flex-grow relative">
+<input class="w-full bg-transparent border-0 border-b border-secondary/30 focus:border-secondary focus:ring-0 text-on-surface font-body-md text-body-md font-mono placeholder:text-on-surface-variant/40 px-2 py-2 pb-1 transition-colors" placeholder="Enter command or speak to JARVIS..." type="text"/>
+<div class="absolute right-2 top-1/2 -translate-y-1/2 text-secondary/50 font-terminal-sm text-terminal-sm pointer-events-none">
+                            [ENTER]
+                        </div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</body></html>
