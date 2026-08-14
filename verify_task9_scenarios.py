@@ -1,7 +1,14 @@
 import os
+import sys
+import io
 import json
 import uuid
 import tempfile
+
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if sys.stderr.encoding and sys.stderr.encoding.lower() != "utf-8":
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 from core.llm_engine import LLMEngine
 from core.memory_manager import MemoryManager
 from core.audit_logger import SQLiteAuditLogger
