@@ -1,0 +1,163 @@
+JARVIS — Personal Autonomous AI Operating System
+Comprehensive Product Requirements Document (PRD)
+Version 1.0  •  August 12, 2026  •  Windows-first
+
+1. Product Vision
+JARVIS is a highly capable personal AI assistant that acts as an intelligent interface between the user and their computer.
+The user describes what they want; JARVIS determines how to accomplish it. It should understand natural language, plan tasks, select specialized agents, operate authorized computer resources, verify outcomes, remember useful context, and ask for approval before consequential actions.
+2. Problem Statement
+Existing assistants are usually limited to answering questions, opening applications, or performing isolated actions. JARVIS is intended to unify computer control, browser automation, file management, development tools, research, communication, media control, planning, verification, and long-term memory.
+3. Product Principles
+Outcome-oriented: optimize for the requested result, not merely literal commands.
+Specialized agents: use the best agent for each type of work.
+Controlled autonomy: maximize useful automation while preserving permissions and user approval.
+Verification-first: never claim an action succeeded without evidence when verification is possible.
+Transparent execution: important actions should be inspectable through history and audit logs.
+Least privilege: agents receive only the access they need.
+4. Goals
+Natural-language and voice interaction.
+Windows control and application management.
+Authorized file and folder management.
+Browser and web-app interaction.
+Development-tool integration.
+Multi-step planning and multi-agent delegation.
+Short-term, episodic, semantic, and procedural memory.
+Task verification, failure recovery, and user confirmation.
+User-configurable permissions and autonomy.
+5. Non-Goals / Safety Boundaries
+JARVIS should not have unrestricted system access by default.
+It should not bypass operating-system or application security, circumvent authentication, expose credentials to models, or perform destructive/irreversible actions without appropriate authorization.
+Sensitive operations should use explicit permissions, confirmation, isolation, and audit logging.
+6. Core Interaction Pipeline
+User Request → Speech-to-Text (if voice) → Intent Understanding → Context Retrieval → Task Classification → Risk Assessment → Planning → Agent Selection → Tool Execution → Verification → Memory Update → Response.
+7. Master Agent
+The Master Agent is the primary orchestrator. It understands intent, maintains context, decides whether a request is simple or complex, creates plans, delegates tasks, monitors agents, resolves conflicts, requests confirmation, verifies final outcomes, and communicates results.
+8. Specialized Agent System
+Windows Agent — Windows settings, applications, windows, processes, desktop operations, clipboard, notifications, and system information.
+File System Agent — searching, creating, reading, moving, renaming, organizing, and managing authorized files and folders.
+Browser Agent — navigation, search, forms, page understanding, permitted downloads/uploads, and web application interaction.
+Development Agent — repositories, source code, IDEs, terminals, tests, Git, debugging, and development environments.
+Backend Agent — APIs, databases, authentication architecture, server-side code, deployment configuration, and backend debugging.
+Frontend Agent — UI, React/Next.js or equivalent frameworks, HTML/CSS, browser debugging, accessibility, and frontend testing.
+Research Agent — web research, documentation research, source comparison, extraction, and structured summaries.
+Communication Agent — drafting and, when authorized, sending messages or emails.
+Media Agent — music, video, podcasts, and media applications.
+System Monitor Agent — CPU, RAM, storage, network, battery, processes, and application health.
+9. Agent Router
+The Router maps task requirements to agent capabilities. It should rank available agents and select one or several agents for complex tasks.
+For example, a request to research an authentication approach and then implement it may use Research → Backend → Testing agents.
+10. Agent-to-Agent Communication
+Agents communicate using structured task messages containing status, result, evidence, errors, files changed, actions performed, and recommended next steps.
+11. Task Planner
+Complex requests should become a task graph with dependencies and, where safe, parallel execution. The planner should break objectives into observable steps and provide progress.
+12. Tool / Execution System
+Tool categories should include Windows APIs, application integrations, browser automation, terminal tools, filesystem tools, development tools, research tools, communication tools, and media tools.
+Each tool should define its name, description, input/output schema, required permissions, risk level, rollback capability, and verification method.
+13. Permission and Risk Model
+Level 0 — Read-only: inspect files, system information, or webpages.
+Level 1 — Reversible: open applications, change window layout, create temporary resources.
+Level 2 — External side effect: send messages, upload/post content, make purchases, or similar actions; normally require confirmation.
+Level 3 — Destructive/high impact: delete files, uninstall software, alter security settings, or change critical configuration; explicit confirmation required.
+14. Confirmation and Human-in-the-Loop
+JARVIS should ask for clarification when intent is ambiguous and confirmation when an action has meaningful consequences.
+Users should be able to configure trusted actions, always-ask actions, and restricted actions.
+15. Computer Control Strategy
+Prefer structured interfaces in this order: official API → OS API → application automation interface → accessibility interface → browser automation → UI automation → mouse/keyboard simulation.
+Screen-coordinate clicking should be a fallback, not the primary architecture.
+16. Browser Control
+The Browser Agent should maintain structured state such as current browser, tab, URL, page title, visible elements, forms, buttons, and links so actions are based on semantic targets rather than screen coordinates.
+17. Development Environment
+JARVIS should integrate with terminals, IDEs, Git, package managers, debuggers, test frameworks, containers, and local servers.
+It should identify the correct project/environment, run commands in authorized workspaces, inspect output, diagnose failures, and report results.
+18. Git Integration
+Supported operations may include status, diff, log, branch inspection, checkout, commit, and other authorized workflows. Higher-impact operations such as pushing changes should have configurable confirmation.
+19. Voice System
+Microphone → Voice Activity Detection → Speech-to-Text → JARVIS Core → Text-to-Speech.
+Normal voice responses should be concise; complex tasks should provide progress and a clear final result.
+20. Memory Architecture
+Short-term memory: current conversation and immediate context.
+Episodic memory: useful past events and work sessions.
+Semantic memory: stable facts about the user's authorized environment and preferences.
+Procedural memory: repeated workflows and routines.
+Memory should be selective, inspectable, editable, deletable, and user-controlled.
+21. Environment Knowledge
+JARVIS should maintain an up-to-date model of authorized applications, project locations, drives, development tools, and other relevant computer resources. It should refresh stale information rather than assuming it is permanent.
+22. Local Knowledge Index
+A local index can search authorized file metadata and content before sending only the necessary context to an AI model. This reduces unnecessary data exposure and improves retrieval.
+23. Security Architecture
+Security must be foundational: least privilege, isolation where appropriate, protected secrets, explicit confirmation, auditability, and immediate permission revocation.
+Credentials should be handled through secure credential storage rather than placed in model context.
+24. Secret Management
+Models and agents should receive capability-level access to credentials instead of raw passwords or tokens whenever possible.
+25. Sandboxing
+Development and potentially risky agents should operate inside explicitly authorized workspaces and restricted environments. System directories and unrelated user data should remain protected.
+26. User Interface
+Primary UI: desktop assistant with text and voice input.
+Advanced UI should show active agents, current task, task progress, actions, errors, and approval requests.
+A task-history view should allow the user to inspect completed work.
+27. Audit Log
+Important actions should record timestamp, agent, tool, action, target, result, risk level, and whether user confirmation was provided.
+28. Task Verification
+Verification is a first-class component. For example, after a 'play song' request, JARVIS should confirm that the intended media is selected and playback is actually active when those signals are available.
+29. Failure Recovery
+On failure, JARVIS should diagnose the problem, retry when safe, try an authorized alternative method, or ask the user. It must report failure honestly rather than pretending success.
+30. Proactive Assistance
+Future versions may detect useful situations and offer assistance, but proactive behavior must remain within user-configured boundaries and should not silently perform consequential actions.
+31. Learning and Workflow Automation
+Repeated workflows can become procedural memories. Learned routines must remain visible, editable, disableable, and subject to the same permission model as manually requested actions.
+32. Model Strategy
+JARVIS should support multiple models selected by a model router based on task complexity, latency, cost, context size, reasoning requirements, and privacy needs.
+Examples include a strong reasoning model for orchestration, code-specialized models for development, fast models for classification, and dedicated speech models for voice.
+33. Local + Cloud Architecture
+Local components can handle computer control, private indexing, basic commands, and offline functionality. Cloud models can handle advanced reasoning, research, coding, or large-context workloads.
+The system should make data-boundary behavior understandable to the user.
+34. High-Level Architecture
+USER → Voice/Text UI → JARVIS Core → Context + Memory → Planner/Router → Agent Pool + Tool System + Risk Engine → Computer/Services → Verification → Memory → Result.
+35. Suggested Project Structure
+jarvis/core — orchestrator, planner, router, context, reasoning.
+jarvis/agents — windows, browser, filesystem, developer, backend, frontend, research, communication, media.
+jarvis/tools — windows, browser, terminal, filesystem, applications.
+jarvis/memory — short-term, episodic, semantic, procedural.
+jarvis/security — permissions, credentials, sandbox, audit.
+jarvis/voice — speech-to-text, text-to-speech, wake word.
+jarvis/ui — desktop interface.
+jarvis/tests — automated agent and integration tests.
+36. Example: Play a Song
+User: 'Play Blinding Lights.'
+JARVIS identifies the outcome as playback, selects the Media Agent, determines an available authorized service, searches for the requested track, starts playback, verifies playback state, and reports completion.
+37. Example: Send a Message
+User: 'Tell Ahmed I'll be there at 6.'
+JARVIS identifies the recipient and communication channel, drafts the message, requests confirmation according to policy, sends it if approved, verifies the operation where possible, and records the action in history.
+38. Example: Clean Downloads
+JARVIS analyzes the authorized Downloads directory, categorizes files, identifies candidates for organization, presents proposed changes, obtains confirmation for destructive operations, performs the changes, and verifies the result.
+39. Example: Multi-Agent Development Task
+User: 'Research the best authentication approach for my backend, implement it, run the tests, and tell me what changed.'
+Master Agent → Research Agent → Backend Agent → Testing Agent → Master Agent. The final response should summarize research, implementation changes, test results, failures, and remaining work.
+40. Example: Start Work
+JARVIS can retrieve a learned workflow such as opening the preferred IDE, opening the remembered project, starting the backend and frontend, and opening the local application in a browser. Each step remains permission-aware and verifiable.
+41. Observability
+Developer mode should expose current task, active agent, tool calls, execution time, model, errors, permissions, retrieved memories, and relevant logs. This is essential for debugging and trust.
+42. Agent Evaluation
+Each agent should have automated tests for normal operations, invalid inputs, permission boundaries, error recovery, and verification. Integration tests should cover realistic multi-agent workflows.
+43. Success Metrics
+Reliability target: 95%+ successful completion for supported common tasks.
+Verification target: accurately distinguish success from failure whenever reliable signals are available.
+Latency target: simple commands should begin action within roughly 2–3 seconds when infrastructure allows.
+Trust target: users can determine what JARVIS did, why it did it, what changed, and which agent performed it.
+44. MVP — Phase 1
+Windows desktop UI; text input; voice input; Master Agent; basic memory; Windows Agent; File Agent; application launcher; Browser Agent; permissions; confirmations; task history; basic verification.
+Example supported commands: open Chrome, open VS Code, find a Python project, play music, create a folder, find a file, move a file, change a permitted Windows setting, and search the web.
+45. Phase 2
+Development Agent, terminal integration, Git, IDE integration, Research Agent, multi-agent workflows, long-term memory, environment indexing, task planning, and agent-to-agent communication.
+46. Phase 3
+Advanced browser automation, Media Agent, Communication Agent, proactive assistance, workflow learning, parallel agents, advanced verification, local model support, and hybrid model routing.
+47. Phase 4 — Advanced JARVIS
+Persistent personal context, dynamic agent creation, automatic workflow discovery, advanced computer vision, application-specific integrations, cross-device control, proactive recommendations, advanced local AI, personal knowledge graph, self-diagnosis, and self-testing.
+48. Ultimate Product Vision
+JARVIS becomes a personal computer operating layer: the user describes objectives rather than application-level procedures, and JARVIS translates those objectives into context-aware plans, specialized agents, controlled tools, verified actions, and useful memory.
+49. Core Architectural Rule
+JARVIS should never confuse 'I know how to do something' with 'I actually did it.' Verification is a first-class part of the architecture.
+The central loop is: Intent → Context → Plan → Agent Selection → Tool Selection → Execution → Verification → Memory → Result.
+50. MVP Requirements Matrix
+51. Final Product Definition
+JARVIS is a personal multi-agent AI operating system that understands natural-language objectives, remembers useful user context, understands the user's authorized digital environment, delegates work to specialized agents, operates applications and development tools through controlled interfaces, verifies its actions, and asks the user for approval whenever an operation has meaningful consequences.
