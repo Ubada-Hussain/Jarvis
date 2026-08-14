@@ -5,7 +5,8 @@ from enum import Enum
 from typing import Dict, List, Any, Optional, Tuple
 from pydantic import BaseModel, Field
 
-from core.environment_index import EnvironmentIndex, ProjectKnowledge
+from core.environment_index import EnvironmentIndex
+from core.environment_models import EnvironmentKnowledge, EnvironmentFact
 from core.memory_manager import MemoryManager
 from core.tool_registry import ToolRegistry, tool_registry
 from core.audit_logger import SQLiteAuditLogger
@@ -89,7 +90,7 @@ class ContextResolver:
             metadata={"request_id": request_id, "request": request}
         ))
         
-        normalized = request.strip().lower()
+        normalized = re.sub(r"[.!?]+$", "", request.strip().lower()).strip()
         evidence: List[str] = []
         ambiguity_reasons: List[str] = []
         ambiguity = False
@@ -119,7 +120,7 @@ class ContextResolver:
                 "languages": [f.value for f in env_knowledge.languages],
                 "frameworks": [f.value for f in env_knowledge.frameworks],
                 "entry_points": [f.value for f in env_knowledge.entry_points],
-                "timestamp": env_knowledge.scanned_at
+                "timestamp": getattr(env_knowledge, "last_scanned", "")
             }
             evidence.append(f"EnvironmentIndex: languages={env_facts['languages']}, frameworks={env_facts['frameworks']}")
         else:
@@ -138,7 +139,7 @@ class ContextResolver:
                     data = ep.get("data", {})
                     # Only accept verified memories
                     tags = data.get("tags", [])
-                    if "verified" in tags or ep.get("score", 0) > 0.6:
+                    if "verified" in tags and "unverified" not in tags:
                         # Conflict check with EnvironmentIndex (Precedence rule: Environment outranks old memory)
                         mem_summary = str(data.get("summary", "")).lower()
                         conflicted = False

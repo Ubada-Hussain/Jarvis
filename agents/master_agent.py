@@ -70,6 +70,8 @@ class MasterAgent(BaseAgent):
         # Thread pool is now managed by Scheduler
         self.audit_logger = SQLiteAuditLogger()
         self.planner = Planner(self.llm, self.memory)
+        from core.context_resolver import ContextResolver
+        self.context_resolver = ContextResolver(self.memory, audit_logger=self.audit_logger)
         
         # Initialize standard agents
         self.agents: Dict[str, BaseAgent] = {
@@ -137,13 +139,23 @@ class MasterAgent(BaseAgent):
             finally:
                 _update_agent_status("ObserverAgent", "idle")
 
-        print(f"\n[{self.name}] Analyzing task to generate a Task Graph with dependencies...")
+        print(f"\n[{self.name}] Resolving context and analyzing task intent...")
         
         # Build available agents dict
         available_agents = {name: agent.description for name, agent in self.agents.items() if name != "ObserverAgent"}
         
+        # Step 1: Deterministic Context & Intent Resolution (Task 12)
+        structured_intent = self.context_resolver.resolve(task, available_agents)
+        
+        # Step 2: Handle ambiguous requests safely without risky execution
+        if structured_intent.ambiguity and structured_intent.requires_clarification:
+            clarification_msg = f"I need a bit more clarification to assist you properly: {'; '.join(structured_intent.ambiguity_reasons)}"
+            observability_manager.end_task(status="COMPLETED")
+            return clarification_msg
+            
         try:
-            graph = self.planner.create_graph(task, available_agents)
+            # Step 3: Pass StructuredIntent to Planner to construct Task Graph
+            graph = self.planner.create_graph(structured_intent, available_agents)
             
             print(f"[{self.name}] Task Graph created with {len(graph.nodes)} nodes.")
             for node_id, node in graph.nodes.items():

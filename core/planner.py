@@ -71,10 +71,10 @@ class Planner:
             response = response[:-3]
         return json.loads(response.strip())
 
-    def create_graph(self, objective: str, available_agents: Dict[str, str] = None) -> TaskGraph:
+    def create_graph(self, objective: Any, available_agents: Dict[str, str] = None) -> TaskGraph:
         """
-        Creates a Task Graph. First checks for ProceduralMemory matches,
-        falling back to LLM generation if none exist.
+        Creates a Task Graph. Accepts either a raw string objective or a StructuredIntent (Task 12).
+        First checks for ProceduralMemory matches, falling back to LLM generation if none exist.
         """
         if available_agents is None:
             available_agents = {
@@ -84,34 +84,49 @@ class Planner:
                 "MasterAgent": "General orchestration",
                 "System": "System operations"
             }
+            
+        is_intent = hasattr(objective, "original_request")
+        objective_text = objective.original_request if is_intent else str(objective)
         graph_id = f"graph-{uuid.uuid4()}"
         
+        # Ambiguity check: If request is ambiguous, return a safe clarification task
+        if is_intent and objective.ambiguity and objective.requires_clarification:
+            graph = TaskGraph(graph_id=graph_id, objective=objective_text)
+            reasons = "; ".join(objective.ambiguity_reasons)
+            clarification_node = TaskNode(
+                node_id="clarify-0",
+                description=f"Clarification required: {reasons}",
+                agent="MasterAgent",
+                risk_level="READ_ONLY"
+            )
+            graph.nodes[clarification_node.node_id] = clarification_node
+            return graph
+        
         # 1. Check for Procedural Memory matches
-        if self.memory:
-            results = self.memory.get_relevant_context(objective, memory_types=["procedural"], max_results=1)
+        proc_match = objective.procedure_match if is_intent else None
+        if not proc_match and self.memory:
+            results = self.memory.get_relevant_context(objective_text, memory_types=["procedural"], max_results=1)
             if results:
-                match = results[0]["data"]
-                # Create graph from procedure
-                graph = TaskGraph(graph_id=graph_id, objective=objective)
-                prev_node_id = None
-                for i, step_dict in enumerate(match.get("steps", [])):
-                    node_id = f"{match.get('procedure_id')}-step-{i}"
-                    
-                    # For simplicity, default sequential execution
-                    deps = [prev_node_id] if prev_node_id else []
-                    
-                    node = TaskNode(
-                        node_id=node_id,
-                        description=f"{step_dict.get('action')}: {step_dict.get('description')}",
-                        agent=step_dict.get("agent", "SystemAgent"),
-                        dependencies=deps,
-                        risk_level="UNKNOWN"
-                    )
-                    graph.nodes[node_id] = node
-                    prev_node_id = node_id
-                    
-                print(f"[Planner] Used Procedural Memory '{match.get('name')}' to generate graph.")
-                return graph
+                proc_match = results[0]["data"]
+                
+        if proc_match:
+            graph = TaskGraph(graph_id=graph_id, objective=objective_text)
+            prev_node_id = None
+            for i, step_dict in enumerate(proc_match.get("steps", [])):
+                node_id = f"{proc_match.get('procedure_id', 'proc')}-step-{i}"
+                deps = [prev_node_id] if prev_node_id else []
+                node = TaskNode(
+                    node_id=node_id,
+                    description=f"{step_dict.get('action')}: {step_dict.get('description')}",
+                    agent=step_dict.get("agent", "SystemAgent"),
+                    dependencies=deps,
+                    risk_level="UNKNOWN"
+                )
+                graph.nodes[node_id] = node
+                prev_node_id = node_id
+                
+            print(f"[Planner] Used Procedural Memory '{proc_match.get('name')}' to generate graph.")
+            return graph
         
         # 2. Fallback to LLM Planning
         agent_descriptions = "\n".join([f"- {name}: {desc}" for name, desc in available_agents.items()])
@@ -140,9 +155,18 @@ class Planner:
             tools_summary.append(f"- {ag}: Capabilities={caps}, Tools={t_names}")
         tool_registry_context = "\nREGISTERED CAPABILITIES & TOOLS:\n" + "\n".join(tools_summary)
         
+        intent_hints = ""
+        if is_intent:
+            intent_hints = (
+                f"\nSTRUCTURED INTENT (Confidence: {objective.confidence.value}):\n"
+                f"- Type: {objective.intent_type.value}\n"
+                f"- Recommended Agents: {', '.join(objective.candidate_agents) or 'None'}\n"
+                f"- Evidence: {'; '.join(objective.evidence)}\n"
+            )
+        
         prompt = (
             f"You are the JARVIS Task Planner. Break down the user objective into a Task Graph with dependencies.\n"
-            f"Objective: '{objective}'\n\n"
+            f"Objective: '{objective_text}'\n{intent_hints}\n"
             f"Available Agents:\n{agent_descriptions}\n{env_context}\n{tool_registry_context}\n"
             "RULES:\n"
             "1. You MUST ONLY assign tasks to the Available Agents listed above. If an agent does not exist for a subtask, assign it to 'NOT_AVAILABLE'.\n"
