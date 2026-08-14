@@ -112,9 +112,8 @@ class MasterAgent(BaseAgent):
         task_id = str(uuid.uuid4())
         observability_manager.start_task(task_id, task)
         
-        try:
-            # Hot-load any new agents installed by the Observer before routing
-            self._load_custom_agents()
+        # Hot-load any new agents installed by the Observer before routing
+        self._load_custom_agents()
         
         # If the user specifically asks the observer to run
         if "evolve" in task.lower() or "observe" in task.lower() or "detect gap" in task.lower():
