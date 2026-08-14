@@ -72,6 +72,9 @@ class DevAgent(BaseAgent):
             SEARCH_INTERNET_TOOL, OPEN_URL_TOOL, OPEN_FILE_EXPLORER_TOOL, 
             OPEN_SYSTEM_SETTINGS_TOOL, PLAY_MEDIA_TOOL
         )
+        from core.dev_tools import (
+            read_code_file, write_code_file, READ_CODE_FILE_TOOL, WRITE_CODE_FILE_TOOL
+        )
         from core.execution_gate import ToolMetadata, RiskLevel
         
         gate = self._setup_execution_gate(task_id)
@@ -79,6 +82,8 @@ class DevAgent(BaseAgent):
         gate.register(ToolMetadata("stop_server", RiskLevel.REVERSIBLE, "server_execution"), self._stop_server)
         gate.register(ToolMetadata("server_status", RiskLevel.READ_ONLY, "process_monitoring"), self._server_status)
         gate.register(ToolMetadata("inspect_directory", RiskLevel.READ_ONLY, "fs_read"), self._inspect_directory)
+        gate.register(ToolMetadata("read_code_file", RiskLevel.READ_ONLY, "fs_read"), read_code_file)
+        gate.register(ToolMetadata("write_code_file", RiskLevel.REVERSIBLE, "fs_write"), write_code_file)
         
         system_prompt = (
             f"You are {self.name}. {self.description}\n"
@@ -103,7 +108,8 @@ class DevAgent(BaseAgent):
             prompt=task,
             system_prompt=system_prompt,
             tools=[
-                START_SERVER_TOOL, STOP_SERVER_TOOL, SERVER_STATUS_TOOL, INSPECT_DIR_TOOL, 
+                START_SERVER_TOOL, STOP_SERVER_TOOL, SERVER_STATUS_TOOL, INSPECT_DIR_TOOL,
+                READ_CODE_FILE_TOOL, WRITE_CODE_FILE_TOOL,
                 SEARCH_INTERNET_TOOL, OPEN_URL_TOOL, OPEN_FILE_EXPLORER_TOOL, 
                 OPEN_SYSTEM_SETTINGS_TOOL, PLAY_MEDIA_TOOL
             ],
