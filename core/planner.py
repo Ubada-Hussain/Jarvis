@@ -71,11 +71,19 @@ class Planner:
             response = response[:-3]
         return json.loads(response.strip())
 
-    def create_graph(self, objective: str, available_agents: Dict[str, str]) -> TaskGraph:
+    def create_graph(self, objective: str, available_agents: Dict[str, str] = None) -> TaskGraph:
         """
         Creates a Task Graph. First checks for ProceduralMemory matches,
         falling back to LLM generation if none exist.
         """
+        if available_agents is None:
+            available_agents = {
+                "BackendAgent": "Backend development",
+                "FrontendAgent": "Frontend development",
+                "DevAgent": "General development",
+                "MasterAgent": "General orchestration",
+                "System": "System operations"
+            }
         graph_id = f"graph-{uuid.uuid4()}"
         
         # 1. Check for Procedural Memory matches
@@ -121,11 +129,21 @@ class Planner:
                 f"- Frameworks: {frameworks or 'Unknown'}\n"
                 f"- Entry Points: {entry_points or 'Unknown'}\n"
             )
+            
+        # Discover capabilities and tools dynamically from Tool Registry (Task 11)
+        from core.tool_registry import tool_registry
+        tools_summary = []
+        for ag in available_agents:
+            t_list = tool_registry.get_for_agent(ag)
+            t_names = [t.name for t in t_list]
+            caps = list(set([c for t in t_list for c in t.capabilities]))
+            tools_summary.append(f"- {ag}: Capabilities={caps}, Tools={t_names}")
+        tool_registry_context = "\nREGISTERED CAPABILITIES & TOOLS:\n" + "\n".join(tools_summary)
         
         prompt = (
             f"You are the JARVIS Task Planner. Break down the user objective into a Task Graph with dependencies.\n"
             f"Objective: '{objective}'\n\n"
-            f"Available Agents:\n{agent_descriptions}\n{env_context}\n"
+            f"Available Agents:\n{agent_descriptions}\n{env_context}\n{tool_registry_context}\n"
             "RULES:\n"
             "1. You MUST ONLY assign tasks to the Available Agents listed above. If an agent does not exist for a subtask, assign it to 'NOT_AVAILABLE'.\n"
             "2. CAPABILITY ROUTING:\n"
@@ -133,11 +151,12 @@ class Planner:
             "   - Assign frontend tasks (UI components, styling, Vite dev server, frontend state, React) to 'FrontendAgent'.\n"
             "   - For full-stack/mixed objectives, create distinct subtasks for BackendAgent and FrontendAgent with appropriate dependency ordering (e.g. Frontend depends on Backend API).\n"
             "   - If task domain is AMBIGUOUS and Environment Index lacks evidence, do NOT silently guess: assign to 'NOT_AVAILABLE' or safe inspection.\n"
-            "3. Complex tasks should be broken into sequential or parallel steps.\n"
-            "4. If tasks can be executed simultaneously without conflicting (e.g., read-only lookups), leave their 'dependencies' list empty.\n"
-            "5. If a task requires the output of another task, list the preceding task's node_id in the 'dependencies' array.\n"
-            "6. NO CYCLIC DEPENDENCIES. (A depends on B, B depends on A).\n"
-            "7. Be conservative with parallel execution. If unsure, make them sequential.\n\n"
+            "3. DO NOT INVENT TOOLS: Agents can only execute tools registered in the Tool Registry.\n"
+            "4. Complex tasks should be broken into sequential or parallel steps.\n"
+            "5. If tasks can be executed simultaneously without conflicting (e.g., read-only lookups), leave their 'dependencies' list empty.\n"
+            "6. If a task requires the output of another task, list the preceding task's node_id in the 'dependencies' array.\n"
+            "7. NO CYCLIC DEPENDENCIES. (A depends on B, B depends on A).\n"
+            "8. Be conservative with parallel execution. If unsure, make them sequential.\n\n"
             "Respond ONLY with a JSON object in this exact format:\n"
             "{\n"
             '  "nodes": [\n'
@@ -212,3 +231,7 @@ class Planner:
             
         for node_id in graph.nodes:
             visit(node_id)
+
+    plan = create_graph
+
+TaskPlanner = Planner

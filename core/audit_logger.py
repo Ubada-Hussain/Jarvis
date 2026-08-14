@@ -83,9 +83,18 @@ class SQLiteAuditLogger:
                             evidence TEXT,
                             errors TEXT,
                             files_changed TEXT,
-                            recommended_next_steps TEXT
+                            recommended_next_steps TEXT,
+                            attempt INTEGER,
+                            recovery_action TEXT
                         )
                     ''')
+                    # Migrate existing a2a_messages table if columns are missing
+                    cursor.execute("PRAGMA table_info(a2a_messages)")
+                    a2a_cols = [row[1] for row in cursor.fetchall()]
+                    if "attempt" not in a2a_cols:
+                        cursor.execute("ALTER TABLE a2a_messages ADD COLUMN attempt INTEGER")
+                    if "recovery_action" not in a2a_cols:
+                        cursor.execute("ALTER TABLE a2a_messages ADD COLUMN recovery_action TEXT")
                     
                     cursor.execute('''
                         CREATE TABLE IF NOT EXISTS recovery_events (

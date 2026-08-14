@@ -94,9 +94,11 @@ class ExecutionGate:
     def execute(self, tool_name: str, **kwargs) -> ToolResult:
         """
         Executes a tool after performing risk assessment, permission checks,
-        and requesting user confirmation if required. Logs EVERYTHING to Audit Log
-        and Observability Manager.
+        schema validation, and requesting user confirmation if required.
+        Logs EVERYTHING to Audit Log and Observability Manager.
         """
+        from core.tool_registry import tool_registry
+        
         start_time = time.time()
         event_id = str(uuid.uuid4())
         timestamp = datetime.utcnow().isoformat() + "Z"
@@ -141,20 +143,62 @@ class ExecutionGate:
             observability_manager.runtime_state["active_tool"] = None
             return result_obj
 
+        # 1. Tool Registry Authoritative Verification (Task 11)
+        tool_def = tool_registry.get(tool_name)
+        if not tool_def and tool_name not in self._registry:
+            observability_manager.emit_event(ObservabilityEvent(
+                event_type="TOOL_REJECTED",
+                tool=tool_name,
+                agent=self.agent_name,
+                error=f"Unregistered tool: {tool_name}"
+            ))
+            event.execution_status = "REJECTED"
+            event.verification_status = "VERIFIED_FAILURE"
+            return _finalize_audit(ToolResult(
+                status=VerificationStatus.VERIFIED_FAILURE,
+                message=f"UNREGISTERED_TOOL: Tool '{tool_name}' is not registered in ToolRegistry.",
+                evidence="Security boundary blocked execution: Unregistered tool."
+            ))
+            
+        # 2. Schema Validation (Task 11 Phase 9)
+        if tool_def:
+            valid_args, err_msg = tool_registry.validate_arguments(tool_name, kwargs)
+            if not valid_args:
+                observability_manager.emit_event(ObservabilityEvent(
+                    event_type="INVALID_TOOL_ARGUMENTS",
+                    tool=tool_name,
+                    agent=self.agent_name,
+                    error=err_msg
+                ))
+                event.execution_status = "INVALID_ARGUMENTS"
+                event.verification_status = "VERIFIED_FAILURE"
+                return _finalize_audit(ToolResult(
+                    status=VerificationStatus.VERIFIED_FAILURE,
+                    message=f"INVALID_TOOL_ARGUMENTS: {err_msg}",
+                    evidence="Schema validation failed before tool execution."
+                ))
+
         if tool_name not in self._registry:
             return _finalize_audit(ToolResult(
                 status=VerificationStatus.VERIFIED_FAILURE,
                 message=f"[{tool_name} ERROR] Tool not registered in ExecutionGate.",
-                evidence="Security blocked execution: Missing metadata."
+                evidence="Security blocked execution: Missing implementation binding."
             ))
             
         metadata, func = self._registry[tool_name]
         
-        event.risk_level = metadata.risk_level.name
+        # Inherit metadata from tool_def if available
+        if tool_def:
+            event.risk_level = tool_def.risk_level.name if hasattr(tool_def.risk_level, 'name') else str(tool_def.risk_level)
+            requires_confirmation = tool_def.confirmation_required
+        else:
+            event.risk_level = metadata.risk_level.name
+            requires_confirmation = metadata.requires_confirmation
+            
         event.target = self._extract_target(metadata, kwargs)
         
         # --- PERMISSION & CONFIRMATION CHECK ---
-        if metadata.requires_confirmation:
+        if requires_confirmation:
             event.confirmation_status = "PENDING"
             if not self.approval_manager:
                 event.permission_status = "DENIED"

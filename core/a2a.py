@@ -82,8 +82,8 @@ class A2ADispatcher:
         Dispatches a TASK_REQUEST message to the target agent and constructs a 
         TASK_RESULT/TASK_FAILED response derived from system evidence.
         """
-        if message.message_type != MessageType.TASK_REQUEST:
-            raise ValueError(f"Dispatcher expects TASK_REQUEST, got {message.message_type}")
+        if message.message_type not in (MessageType.TASK_REQUEST, MessageType.TASK_RETRYING, MessageType.TASK_RECOVERING):
+            raise ValueError(f"Dispatcher expects TASK_REQUEST or retry message, got {message.message_type}")
             
         target_agent = message.recipient_agent
         if target_agent == "NOT_AVAILABLE" or target_agent not in self.agents:
@@ -130,25 +130,44 @@ class A2ADispatcher:
                 try:
                     f_list = json.loads(e["files_changed"])
                     for f in f_list:
-                        files_changed.append(FileChange(**f))
+                        if f not in [fc.model_dump() for fc in files_changed]:
+                            files_changed.append(FileChange(**f))
                 except Exception:
                     pass
             
-            # Populate errors and evaluate status
+            # Populate errors
             if e.get("verification_status") == "VERIFIED_FAILURE":
-                status = AgentStatus.FAILED
-                msg_type = MessageType.TASK_FAILED
                 errors.append(AgentError(
                     code="VERIFIED_FAILURE",
                     message=f"Tool {e['tool']} failed verification: {e.get('error', 'Unknown error')}",
                     source="ExecutionGate"
                 ))
             elif e.get("permission_status") == "DENIED":
-                status = AgentStatus.BLOCKED
-                msg_type = MessageType.TASK_BLOCKED
                 errors.append(AgentError(
                     code="PERMISSION_DENIED",
                     message=f"Permission denied for tool {e['tool']}",
+                    source="ExecutionGate"
+                ))
+
+        # Evaluate status from the most recent tool execution event (first in list)
+        if events:
+            latest = events[0]
+            if latest.get("permission_status") == "DENIED":
+                status = AgentStatus.BLOCKED
+                msg_type = MessageType.TASK_BLOCKED
+            elif latest.get("verification_status") == "VERIFIED_FAILURE":
+                status = AgentStatus.FAILED
+                msg_type = MessageType.TASK_FAILED
+            elif latest.get("verification_status") == "VERIFIED_SUCCESS":
+                status = AgentStatus.COMPLETED
+                msg_type = MessageType.TASK_RESULT
+                errors = [] # Cleared on successful verification
+            elif latest.get("verification_status") == "UNVERIFIED":
+                status = AgentStatus.FAILED
+                msg_type = MessageType.TASK_FAILED
+                errors.append(AgentError(
+                    code="UNVERIFIED",
+                    message="Tool returned UNVERIFIED status.",
                     source="ExecutionGate"
                 ))
 

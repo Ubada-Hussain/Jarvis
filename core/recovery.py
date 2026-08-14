@@ -33,7 +33,7 @@ class RetryPolicy(BaseModel):
     max_retries: int = 2
     backoff_factor: float = 0.5
     initial_delay_s: float = 0.2
-    retryable: bool = False
+    retryable: bool = True
     idempotent: bool = False
 
 @dataclass
@@ -109,21 +109,23 @@ class RecoveryManager:
         if "build" in tool_name.lower() or "frontend build failed" in err_lower:
             return FailureCategory.BUILD_FAILURE
             
-        # 5. Agent & A2A
+        # 5. Tool Crashes / Exceptions
+        if code_upper in ("TOOL_CRASH", "TOOL_ERROR", "EXECUTION_EXCEPTION") or "exception" in err_lower or "crashed" in err_lower or "division by zero" in err_lower:
+            return FailureCategory.TOOL_ERROR
+
+        # 6. Agent & A2A
         if "agent_not_found" in code_upper or "not available" in err_lower or "unsupported capability" in err_lower:
             return FailureCategory.AGENT_ERROR
         if "a2a" in code_upper or "dispatcher" in err_lower:
             return FailureCategory.A2A_ERROR
             
-        # 6. Dependency
+        # 7. Dependency
         if "blocked by upstream dependency" in err_lower or "dependency failed" in err_lower:
             return FailureCategory.DEPENDENCY_FAILURE
             
-        # 7. Verification Failure vs Tool Crash
+        # 8. General Verification Failure
         if verification_status == VerificationStatus.VERIFIED_FAILURE.value or verification_status == "VERIFIED_FAILURE":
             return FailureCategory.VERIFICATION_FAILURE
-        if "exception" in err_lower or "crashed" in err_lower or "error" in err_lower:
-            return FailureCategory.TOOL_ERROR
             
         return FailureCategory.UNKNOWN_FAILURE
 
@@ -134,7 +136,8 @@ class RecoveryManager:
         max_retries: int = None,
         retry_policy: Optional[RetryPolicy] = None,
         risk_level: str = "UNKNOWN",
-        requires_confirmation: bool = False
+        requires_confirmation: bool = False,
+        tool_name: Optional[str] = None
     ) -> RecoveryDecision:
         """
         Evaluates whether a failed action can be retried or recovered, and calculates backoff delay.
@@ -143,6 +146,26 @@ class RecoveryManager:
           - No automatic retries for DESTRUCTIVE actions
           - Max retry budget limits
         """
+        if tool_name:
+            try:
+                from core.tool_registry import tool_registry
+                t_def = tool_registry.get(tool_name)
+                if t_def:
+                    if max_retries is None:
+                        max_retries = t_def.max_retries
+                    if risk_level == "UNKNOWN":
+                        risk_level = t_def.risk_level.name if hasattr(t_def.risk_level, 'name') else str(t_def.risk_level)
+                    if not requires_confirmation:
+                        requires_confirmation = t_def.confirmation_required
+                    if retry_policy is None:
+                        retry_policy = RetryPolicy(
+                            max_retries=t_def.max_retries,
+                            retryable=t_def.retryable,
+                            idempotent=t_def.idempotent
+                        )
+            except Exception:
+                pass
+
         effective_max_retries = max_retries if max_retries is not None else (retry_policy.max_retries if retry_policy else self.default_max_retries)
         
         # 1. Non-retryable failure categories
