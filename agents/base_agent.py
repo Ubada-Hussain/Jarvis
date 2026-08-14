@@ -17,7 +17,11 @@ class BaseAgent:
     def _setup_execution_gate(self, task_id: str = None) -> "ExecutionGate":
         """Instantiates the ExecutionGate and registers default tools."""
         from core.execution_gate import ExecutionGate, ToolMetadata, RiskLevel
-        from core.system_tools import create_procedure, CREATE_PROCEDURE_TOOL
+        from core.system_tools import (
+            create_procedure, CREATE_PROCEDURE_TOOL,
+            refresh_environment_index, REFRESH_ENV_TOOL,
+            query_environment_index, QUERY_ENV_TOOL
+        )
         from core.tools import (
             search_internet, open_url, open_file_explorer, 
             open_system_settings, play_media, remember_file
@@ -32,6 +36,8 @@ class BaseAgent:
         gate.register(ToolMetadata("play_media", RiskLevel.REVERSIBLE, "browser_access"), play_media)
         gate.register(ToolMetadata("remember_file", RiskLevel.REVERSIBLE, "db_write"), remember_file)
         gate.register(ToolMetadata("create_procedure", RiskLevel.REVERSIBLE, "db_write"), create_procedure)
+        gate.register(ToolMetadata("refresh_environment_index", RiskLevel.READ_ONLY, "fs_read"), refresh_environment_index)
+        gate.register(ToolMetadata("query_environment_index", RiskLevel.READ_ONLY, "db_read"), query_environment_index)
         
         return gate
 
@@ -67,7 +73,11 @@ class BaseAgent:
             SEARCH_INTERNET_TOOL, OPEN_URL_TOOL, OPEN_FILE_EXPLORER_TOOL,
             OPEN_SYSTEM_SETTINGS_TOOL, PLAY_MEDIA_TOOL, REMEMBER_FILE_TOOL
         )
-        from core.system_tools import CREATE_PROCEDURE_TOOL
+        from core.system_tools import (
+            CREATE_PROCEDURE_TOOL,
+            REFRESH_ENV_TOOL,
+            QUERY_ENV_TOOL
+        )
         
         gate = self._setup_execution_gate(task_id)
         
@@ -81,7 +91,9 @@ class BaseAgent:
                 OPEN_SYSTEM_SETTINGS_TOOL,
                 PLAY_MEDIA_TOOL,
                 REMEMBER_FILE_TOOL,
-                CREATE_PROCEDURE_TOOL
+                CREATE_PROCEDURE_TOOL,
+                REFRESH_ENV_TOOL,
+                QUERY_ENV_TOOL
             ],
             tool_logic=gate
         )
