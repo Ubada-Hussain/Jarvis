@@ -15,7 +15,17 @@ class RiskLevel(IntEnum):
     DESTRUCTIVE = 3
 
 class ToolMetadata:
-    def __init__(self, name: str, risk_level: RiskLevel, required_permission: str, requires_confirmation: bool = None, target_arg: str = None):
+    def __init__(
+        self,
+        name: str,
+        risk_level: RiskLevel,
+        required_permission: str,
+        requires_confirmation: bool = None,
+        target_arg: str = None,
+        retryable: bool = None,
+        idempotent: bool = None,
+        max_retries: int = None
+    ):
         self.name = name
         self.risk_level = risk_level
         self.required_permission = required_permission
@@ -26,6 +36,22 @@ class ToolMetadata:
             self.requires_confirmation = (self.risk_level >= RiskLevel.EXTERNAL_SIDE_EFFECT)
         else:
             self.requires_confirmation = requires_confirmation
+
+        # Task 10: Retry and Idempotency Policy Defaults based on RiskLevel
+        if retryable is not None:
+            self.retryable = retryable
+        else:
+            self.retryable = (self.risk_level in (RiskLevel.READ_ONLY, RiskLevel.REVERSIBLE) and not self.requires_confirmation)
+            
+        if idempotent is not None:
+            self.idempotent = idempotent
+        else:
+            self.idempotent = (self.risk_level == RiskLevel.READ_ONLY)
+            
+        if max_retries is not None:
+            self.max_retries = max_retries
+        else:
+            self.max_retries = 2 if self.retryable else 0
 
 class ExecutionGate:
     """

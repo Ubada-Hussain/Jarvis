@@ -10,12 +10,15 @@ class TaskState(str, Enum):
     PENDING = "PENDING"
     READY = "READY"
     RUNNING = "RUNNING"
+    RETRYING = "RETRYING"
+    RECOVERING = "RECOVERING"
     WAITING_FOR_DEPENDENCY = "WAITING_FOR_DEPENDENCY"
     WAITING_FOR_CONFIRMATION = "WAITING_FOR_CONFIRMATION"
     VERIFYING = "VERIFYING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     BLOCKED = "BLOCKED"
+    ESCALATED = "ESCALATED"
     SKIPPED = "SKIPPED"
 
 @dataclass
@@ -30,6 +33,9 @@ class TaskNode:
     result: str = ""
     error: str = ""
     verification_status: str = "UNVERIFIED"
+    attempts: int = 0
+    max_retries: int = 2
+    failure_category: Optional[str] = None
 
 @dataclass
 class TaskGraph:

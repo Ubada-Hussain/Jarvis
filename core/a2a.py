@@ -15,6 +15,9 @@ class MessageType(str, Enum):
     TASK_BLOCKED = "TASK_BLOCKED"
     TASK_NEEDS_INPUT = "TASK_NEEDS_INPUT"
     TASK_CANCELLED = "TASK_CANCELLED"
+    TASK_RETRYING = "TASK_RETRYING"
+    TASK_RECOVERING = "TASK_RECOVERING"
+    TASK_ESCALATED = "TASK_ESCALATED"
 
 class AgentStatus(str, Enum):
     PENDING = "PENDING"
@@ -24,6 +27,9 @@ class AgentStatus(str, Enum):
     FAILED = "FAILED"
     BLOCKED = "BLOCKED"
     CANCELLED = "CANCELLED"
+    RETRYING = "RETRYING"
+    RECOVERING = "RECOVERING"
+    ESCALATED = "ESCALATED"
 
 class AgentError(BaseModel):
     code: str
@@ -57,6 +63,8 @@ class AgentMessage(BaseModel):
     errors: List[AgentError] = Field(default_factory=list)
     files_changed: List[FileChange] = Field(default_factory=list)
     recommended_next_steps: List[str] = Field(default_factory=list)
+    attempt: int = 1
+    recovery_action: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
 
 class A2ADispatcher:

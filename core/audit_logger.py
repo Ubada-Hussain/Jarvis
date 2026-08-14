@@ -86,6 +86,22 @@ class SQLiteAuditLogger:
                             recommended_next_steps TEXT
                         )
                     ''')
+                    
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS recovery_events (
+                            event_id TEXT PRIMARY KEY,
+                            timestamp TEXT,
+                            task_id TEXT,
+                            node_id TEXT,
+                            agent TEXT,
+                            attempt INTEGER,
+                            failure_category TEXT,
+                            recovery_action TEXT,
+                            reason TEXT,
+                            outcome TEXT,
+                            metadata TEXT
+                        )
+                    ''')
                     conn.commit()
                 finally:
                     conn.close()
