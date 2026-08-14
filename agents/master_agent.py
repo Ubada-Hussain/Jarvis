@@ -63,7 +63,7 @@ class MasterAgent(BaseAgent):
         
         # Thread pool is now managed by Scheduler
         self.audit_logger = SQLiteAuditLogger()
-        self.planner = Planner(self.llm)
+        self.planner = Planner(self.llm, self.memory)
         
         # Initialize standard agents
         self.agents: Dict[str, BaseAgent] = {

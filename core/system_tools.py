@@ -141,5 +141,82 @@ DELETE_FILE_TOOL = {
             },
             "required": ["file_path"]
         }
+        }
+    }
+}
+
+def create_procedure(name: str, description: str, trigger: str, steps: list) -> ToolResult:
+    """Creates a new procedural memory."""
+    try:
+        from core.memory_models import ProceduralMemory, ProcedureStep
+        from core.memory_manager import MemoryManager
+        
+        proc_steps = []
+        for step in steps:
+            proc_steps.append(ProcedureStep(
+                agent=step.get("agent", "DevAgent"),
+                action=step.get("action", ""),
+                description=step.get("description", "")
+            ))
+            
+        mem = ProceduralMemory(
+            name=name,
+            description=description,
+            trigger=trigger,
+            steps=proc_steps
+        )
+        
+        # Instantiate temporarily to save
+        manager = MemoryManager()
+        manager.save_procedural_memory(mem)
+        
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_SUCCESS,
+            message=f"Successfully created procedure '{name}'.",
+            evidence="MemoryManager saved procedural memory to SQLite and ChromaDB."
+        )
+    except Exception as e:
+        return ToolResult(
+            status=VerificationStatus.VERIFIED_FAILURE,
+            message=f"Error creating procedure: {e}",
+            evidence="Exception raised during creation."
+        )
+
+CREATE_PROCEDURE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "create_procedure",
+        "description": "Creates a reusable multi-step procedural memory (automation script/macro). Use this when you have figured out how to solve a repeatable task and want to memorize the workflow.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Short name of the procedure without spaces."
+                },
+                "description": {
+                    "type": "string",
+                    "description": "What this procedure does."
+                },
+                "trigger": {
+                    "type": "string",
+                    "description": "The natural language phrase that should trigger this procedure (e.g. 'Deploy the backend to staging')."
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "agent": {"type": "string", "description": "Name of the agent to handle this step (e.g. DevAgent, SystemAgent)"},
+                            "action": {"type": "string", "description": "The tool or capability to invoke"},
+                            "description": {"type": "string", "description": "Natural language instructions for the agent"}
+                        },
+                        "required": ["agent", "action", "description"]
+                    },
+                    "description": "List of sequential steps to execute."
+                }
+            },
+            "required": ["name", "description", "trigger", "steps"]
+        }
     }
 }

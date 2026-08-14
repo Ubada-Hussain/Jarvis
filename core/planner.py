@@ -46,9 +46,11 @@ class Planner:
     """
     Translates user objectives into a dependency-aware Task Graph.
     Uses LLM to break down tasks securely and assign to existing agents.
+    Can also instantiate pre-verified TaskGraphs from ProceduralMemory.
     """
-    def __init__(self, llm_engine):
+    def __init__(self, llm_engine, memory_manager=None):
         self.llm = llm_engine
+        self.memory = memory_manager
 
     def _parse_llm_json(self, response: str) -> dict:
         response = response.strip()
@@ -62,10 +64,39 @@ class Planner:
 
     def create_graph(self, objective: str, available_agents: Dict[str, str]) -> TaskGraph:
         """
-        Creates a Task Graph by consulting the LLM.
+        Creates a Task Graph. First checks for ProceduralMemory matches,
+        falling back to LLM generation if none exist.
         """
         graph_id = f"graph-{uuid.uuid4()}"
         
+        # 1. Check for Procedural Memory matches
+        if self.memory:
+            results = self.memory.get_relevant_context(objective, memory_types=["procedural"], max_results=1)
+            if results:
+                match = results[0]["data"]
+                # Create graph from procedure
+                graph = TaskGraph(graph_id=graph_id, objective=objective)
+                prev_node_id = None
+                for i, step_dict in enumerate(match.get("steps", [])):
+                    node_id = f"{match.get('procedure_id')}-step-{i}"
+                    
+                    # For simplicity, default sequential execution
+                    deps = [prev_node_id] if prev_node_id else []
+                    
+                    node = TaskNode(
+                        node_id=node_id,
+                        description=f"{step_dict.get('action')}: {step_dict.get('description')}",
+                        agent=step_dict.get("agent", "SystemAgent"),
+                        dependencies=deps,
+                        risk_level="UNKNOWN"
+                    )
+                    graph.nodes[node_id] = node
+                    prev_node_id = node_id
+                    
+                print(f"[Planner] Used Procedural Memory '{match.get('name')}' to generate graph.")
+                return graph
+        
+        # 2. Fallback to LLM Planning
         agent_descriptions = "\n".join([f"- {name}: {desc}" for name, desc in available_agents.items()])
         
         prompt = (
