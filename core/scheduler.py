@@ -145,15 +145,11 @@ class DependencyScheduler:
                 self.memory_manager.save_episodic_memory(mem)
 
     def _update_states(self, graph: TaskGraph):
-        """Resolves dependencies and marks nodes as READY or BLOCKED."""
+        """Resolves dependencies and approval requirements, marking nodes as READY, WAITING, or BLOCKED."""
         for node in graph.nodes.values():
-            if node.status == TaskState.PENDING or node.status == TaskState.WAITING_FOR_DEPENDENCY:
+            if node.status in (TaskState.PENDING, TaskState.WAITING_FOR_DEPENDENCY, TaskState.WAITING_FOR_CONFIRMATION):
                 deps = [graph.nodes.get(d) for d in node.dependencies if graph.nodes.get(d)]
                 
-                if not deps:
-                    node.status = TaskState.READY
-                    continue
-                    
                 # Check if any dependency failed or blocked
                 if any(d.status in (TaskState.FAILED, TaskState.BLOCKED) for d in deps):
                     node.status = TaskState.BLOCKED
@@ -161,10 +157,25 @@ class DependencyScheduler:
                     continue
                     
                 # Check if ALL dependencies completed
-                if all(d.status == TaskState.COMPLETED for d in deps):
-                    node.status = TaskState.READY
-                else:
+                if deps and not all(d.status == TaskState.COMPLETED for d in deps):
                     node.status = TaskState.WAITING_FOR_DEPENDENCY
+                    continue
+
+                # Dependencies are satisfied. Check approval requirement (Task 14)
+                if node.approval_required:
+                    if node.approval_status == "DENIED":
+                        node.status = TaskState.BLOCKED
+                        node.error = "Blocked: Approval was denied by user."
+                        continue
+                    elif node.approval_status == "CANCELLED":
+                        node.status = TaskState.BLOCKED
+                        node.error = "Blocked: Approval was cancelled."
+                        continue
+                    elif node.approval_status != "APPROVED":
+                        node.status = TaskState.WAITING_FOR_CONFIRMATION
+                        continue
+
+                node.status = TaskState.READY
 
     def _execute_node(self, node: TaskNode, graph_id: str, session_id: Optional[str] = None):
         """Thread worker that executes a specific node with Verification-First Recovery Policy and Session tracking."""
@@ -174,7 +185,7 @@ class DependencyScheduler:
         
         if session_id:
             try:
-                session_manager.update_session(session_id, active_node_id=node.node_id, active_agent=agent_name)
+                self.session_manager.update_session(session_id, active_node_id=node.node_id, active_agent=agent_name)
             except Exception:
                 pass
         
@@ -186,7 +197,7 @@ class DependencyScheduler:
                 node.status = TaskState.RETRYING
                 if session_id:
                     try:
-                        session_manager.transition_state(session_id, SessionStatus.RECOVERING, reason="Retrying failed node", node_id=node.node_id)
+                        self.session_manager.transition_state(session_id, SessionStatus.RECOVERING, reason="Retrying failed node", node_id=node.node_id)
                     except Exception:
                         pass
                 observability_manager.emit_event(ObservabilityEvent(
@@ -208,6 +219,7 @@ class DependencyScheduler:
                 session_id=session_id,
                 task_id=graph_id,
                 node_id=node.node_id,
+                approval_id=node.approval_id,
                 sender_agent="Scheduler",
                 recipient_agent=agent_name,
                 message_type=MessageType.TASK_RETRYING if is_retry else MessageType.TASK_REQUEST,
@@ -229,7 +241,7 @@ class DependencyScheduler:
                     
                     if session_id:
                         try:
-                            session_manager.add_verified_result(session_id, node.node_id, agent_name, node.result, resp_msg.evidence or "Audit Log")
+                            self.session_manager.add_verified_result(session_id, node.node_id, agent_name, node.result, resp_msg.evidence or "Audit Log")
                         except Exception:
                             pass
                     
@@ -269,7 +281,7 @@ class DependencyScheduler:
                     
                     if session_id:
                         try:
-                            session_manager.add_failure(session_id, node.node_id, agent_name, error_msg, category=category.value)
+                            self.session_manager.add_failure(session_id, node.node_id, agent_name, error_msg, category=category.value)
                         except Exception:
                             pass
                     

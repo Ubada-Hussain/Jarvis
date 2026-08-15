@@ -27,6 +27,7 @@ ALLOWED_TRANSITIONS: Dict[SessionStatus, Set[SessionStatus]] = {
     SessionStatus.NEW: {
         SessionStatus.ACTIVE,
         SessionStatus.PLANNING,
+        SessionStatus.EXECUTING,
         SessionStatus.WAITING_FOR_CLARIFICATION,
         SessionStatus.CANCELLED
     },
@@ -55,6 +56,7 @@ ALLOWED_TRANSITIONS: Dict[SessionStatus, Set[SessionStatus]] = {
     },
     SessionStatus.RECOVERING: {
         SessionStatus.EXECUTING,
+        SessionStatus.COMPLETED,
         SessionStatus.FAILED,
         SessionStatus.CANCELLED
     },
@@ -92,6 +94,9 @@ class SessionState(BaseModel):
     recent_failures: List[Dict[str, Any]] = Field(default_factory=list)
     current_context_reference: Optional[Dict[str, Any]] = None
     user_approved_actions: List[str] = Field(default_factory=list)
+    pending_approvals: List[str] = Field(default_factory=list)
+    approved_actions: List[Dict[str, Any]] = Field(default_factory=list)
+    denied_actions: List[Dict[str, Any]] = Field(default_factory=list)
     session_status: SessionStatus = SessionStatus.NEW
     created_at: str = Field(default_factory=lambda: datetime.datetime.now().isoformat() + "Z")
     updated_at: str = Field(default_factory=lambda: datetime.datetime.now().isoformat() + "Z")
@@ -121,10 +126,11 @@ class SessionManager:
     """
     Central Manager for SessionState lifecycle, isolation, persistence, and transitions.
     """
-    def __init__(self, audit_logger: Optional[SQLiteAuditLogger] = None):
+    def __init__(self, audit_logger: Optional[SQLiteAuditLogger] = None, approval_manager=None):
         self.audit_logger = audit_logger or SQLiteAuditLogger()
+        self.approval_manager = approval_manager
         self._sessions: Dict[str, SessionState] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def create_session(
         self,
@@ -261,7 +267,14 @@ class SessionManager:
         """
         Safely cancels an active session, stopping downstream executions.
         Cancellation is NEVER recorded as a success.
+        Cancels all pending approvals bound to this session.
         """
+        try:
+            from core.approval import approval_manager as global_mgr
+            mgr = self.approval_manager or global_mgr
+            mgr.cancel_session_approvals(session_id, reason=reason)
+        except Exception:
+            pass
         return self.transition_state(session_id, SessionStatus.CANCELLED, reason=reason)
 
     def add_verified_result(

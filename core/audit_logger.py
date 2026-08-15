@@ -85,7 +85,9 @@ class SQLiteAuditLogger:
                             files_changed TEXT,
                             recommended_next_steps TEXT,
                             attempt INTEGER,
-                            recovery_action TEXT
+                            recovery_action TEXT,
+                            session_id TEXT,
+                            approval_id TEXT
                         )
                     ''')
                     # Migrate existing a2a_messages table if columns are missing
@@ -95,6 +97,10 @@ class SQLiteAuditLogger:
                         cursor.execute("ALTER TABLE a2a_messages ADD COLUMN attempt INTEGER")
                     if "recovery_action" not in a2a_cols:
                         cursor.execute("ALTER TABLE a2a_messages ADD COLUMN recovery_action TEXT")
+                    if "session_id" not in a2a_cols:
+                        cursor.execute("ALTER TABLE a2a_messages ADD COLUMN session_id TEXT")
+                    if "approval_id" not in a2a_cols:
+                        cursor.execute("ALTER TABLE a2a_messages ADD COLUMN approval_id TEXT")
                     
                     cursor.execute('''
                         CREATE TABLE IF NOT EXISTS recovery_events (
@@ -146,6 +152,41 @@ class SQLiteAuditLogger:
                             node_id TEXT,
                             previous_state TEXT,
                             new_state TEXT,
+                            reason TEXT,
+                            metadata TEXT
+                        )
+                    ''')
+                    
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS approval_requests (
+                            approval_id TEXT PRIMARY KEY,
+                            session_id TEXT,
+                            task_id TEXT,
+                            node_id TEXT,
+                            tool_name TEXT,
+                            risk_level TEXT,
+                            action_description TEXT,
+                            requested_at TEXT,
+                            expires_at TEXT,
+                            status TEXT,
+                            approved_by TEXT,
+                            approval_reason TEXT,
+                            metadata TEXT
+                        )
+                    ''')
+                    
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS approval_events (
+                            event_id TEXT PRIMARY KEY,
+                            timestamp TEXT,
+                            approval_id TEXT,
+                            session_id TEXT,
+                            task_id TEXT,
+                            node_id TEXT,
+                            tool_name TEXT,
+                            previous_status TEXT,
+                            new_status TEXT,
+                            actor TEXT,
                             reason TEXT,
                             metadata TEXT
                         )
@@ -486,3 +527,212 @@ class SQLiteAuditLogger:
         except Exception as e:
             print(f"[AUDIT LOAD SESSION ERROR] {e}")
             return None
+
+    # ── Task 14: Approval Requests & Events Persistence ────────────────────────
+    def save_approval_request(self, req_dict: Dict[str, Any]) -> bool:
+        """Persists or updates an ApprovalRequest in SQLite."""
+        try:
+            status_val = req_dict.get("status")
+            if hasattr(status_val, 'value'):
+                status_str = status_val.value
+            else:
+                status_str = str(status_val).replace("ApprovalStatus.", "")
+
+            risk_val = req_dict.get("risk_level")
+            if hasattr(risk_val, 'value'):
+                risk_str = risk_val.value
+            elif hasattr(risk_val, 'name'):
+                risk_str = risk_val.name
+            else:
+                risk_str = str(risk_val).replace("RiskLevel.", "")
+
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO approval_requests (
+                            approval_id, session_id, task_id, node_id, tool_name,
+                            risk_level, action_description, requested_at, expires_at,
+                            status, approved_by, approval_reason, metadata
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        req_dict.get("approval_id"),
+                        req_dict.get("session_id"),
+                        req_dict.get("task_id"),
+                        req_dict.get("node_id"),
+                        req_dict.get("tool_name"),
+                        risk_str,
+                        req_dict.get("action_description", ""),
+                        req_dict.get("requested_at"),
+                        req_dict.get("expires_at"),
+                        status_str,
+                        req_dict.get("approved_by"),
+                        req_dict.get("approval_reason"),
+                        json.dumps(req_dict.get("metadata") or {})
+                    ))
+                    conn.commit()
+                finally:
+                    conn.close()
+            return True
+        except Exception as e:
+            print(f"[AUDIT SAVE APPROVAL ERROR] {e}")
+            return False
+
+    def load_approval_request(self, approval_id: str) -> Optional[Dict[str, Any]]:
+        """Loads an ApprovalRequest by approval_id."""
+        try:
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT * FROM approval_requests WHERE approval_id = ?", (approval_id,))
+                    row = cursor.fetchone()
+                    if not row:
+                        return None
+                    d = dict(row)
+                    if d.get("status"):
+                        d["status"] = str(d["status"]).replace("ApprovalStatus.", "")
+                    if d.get("risk_level"):
+                        r_str = str(d["risk_level"]).replace("RiskLevel.", "")
+                        try:
+                            d["risk_level"] = int(r_str)
+                        except ValueError:
+                            from core.execution_gate import RiskLevel
+                            d["risk_level"] = getattr(RiskLevel, r_str, RiskLevel.READ_ONLY)
+                    if d.get("metadata") and isinstance(d["metadata"], str):
+                        try:
+                            d["metadata"] = json.loads(d["metadata"])
+                        except Exception:
+                            pass
+                    return d
+                finally:
+                    conn.close()
+        except Exception as e:
+            print(f"[AUDIT LOAD APPROVAL ERROR] {e}")
+            return None
+        except Exception as e:
+            print(f"[AUDIT LOAD APPROVAL ERROR] {e}")
+            return None
+
+    def query_approval_requests(self, session_id: Optional[str] = None, task_id: Optional[str] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Queries approval requests with optional filters."""
+        try:
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    query = "SELECT * FROM approval_requests WHERE 1=1"
+                    params = []
+                    if session_id:
+                        query += " AND session_id = ?"
+                        params.append(session_id)
+                    if task_id:
+                        query += " AND task_id = ?"
+                        params.append(task_id)
+                    if status:
+                        query += " AND status = ?"
+                        params.append(status)
+                    cursor.execute(query, params)
+                    rows = cursor.fetchall()
+                    results = []
+                    for row in rows:
+                        d = dict(row)
+                        if d.get("metadata") and isinstance(d["metadata"], str):
+                            try:
+                                d["metadata"] = json.loads(d["metadata"])
+                            except Exception:
+                                pass
+                        results.append(d)
+                    return results
+                finally:
+                    conn.close()
+        except Exception as e:
+            print(f"[AUDIT QUERY APPROVALS ERROR] {e}")
+            return []
+
+    def log_approval_event(
+        self,
+        approval_id: str,
+        session_id: str,
+        task_id: str,
+        tool_name: str,
+        previous_status: str,
+        new_status: str,
+        node_id: Optional[str] = None,
+        actor: str = "User",
+        reason: str = "",
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """Logs an approval lifecycle transition event."""
+        try:
+            event_id = str(uuid.uuid4())
+            import datetime
+            timestamp = datetime.datetime.now().isoformat() + "Z"
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        INSERT INTO approval_events (
+                            event_id, timestamp, approval_id, session_id, task_id,
+                            node_id, tool_name, previous_status, new_status, actor, reason, metadata
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        event_id,
+                        timestamp,
+                        approval_id,
+                        session_id,
+                        task_id,
+                        node_id or "",
+                        tool_name,
+                        previous_status,
+                        new_status,
+                        actor,
+                        reason,
+                        json.dumps(metadata or {})
+                    ))
+                    conn.commit()
+                finally:
+                    conn.close()
+            return True
+        except Exception as e:
+            print(f"[AUDIT LOG APPROVAL EVENT ERROR] {e}")
+            return False
+
+    def query_approval_events(self, approval_id: Optional[str] = None, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Queries approval lifecycle events."""
+        try:
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    query = "SELECT * FROM approval_events WHERE 1=1"
+                    params = []
+                    if approval_id:
+                        query += " AND approval_id = ?"
+                        params.append(approval_id)
+                    if session_id:
+                        query += " AND session_id = ?"
+                        params.append(session_id)
+                    query += " ORDER BY timestamp ASC"
+                    cursor.execute(query, params)
+                    rows = cursor.fetchall()
+                    results = []
+                    for row in rows:
+                        d = dict(row)
+                        if d.get("metadata") and isinstance(d["metadata"], str):
+                            try:
+                                d["metadata"] = json.loads(d["metadata"])
+                            except Exception:
+                                pass
+                        results.append(d)
+                    return results
+                finally:
+                    conn.close()
+        except Exception as e:
+            print(f"[AUDIT QUERY APPROVAL EVENTS ERROR] {e}")
+            return []

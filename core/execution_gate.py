@@ -91,12 +91,24 @@ class ExecutionGate:
             return first_val if len(first_val) < 50 else "system"
         return "system"
 
-    def execute(self, tool_name: str, **kwargs) -> ToolResult:
+    def execute(
+        self,
+        tool_name: str,
+        approval_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        node_id: Optional[str] = None,
+        **kwargs
+    ) -> ToolResult:
         """
         Executes a tool after performing risk assessment, permission checks,
-        schema validation, and requesting user confirmation if required.
+        schema validation, and verifying valid ApprovalRequest if required.
         Logs EVERYTHING to Audit Log and Observability Manager.
         """
+        # Pop standard execution context if passed in kwargs
+        approval_id = approval_id or kwargs.pop("approval_id", None)
+        session_id = session_id or kwargs.pop("session_id", None) or "default_session"
+        node_id = node_id or kwargs.pop("node_id", None)
+
         from core.tool_registry import tool_registry
         
         start_time = time.time()
@@ -190,14 +202,14 @@ class ExecutionGate:
         # Inherit metadata from tool_def if available
         if tool_def:
             event.risk_level = tool_def.risk_level.name if hasattr(tool_def.risk_level, 'name') else str(tool_def.risk_level)
-            requires_confirmation = tool_def.confirmation_required
+            requires_confirmation = tool_def.confirmation_required or metadata.requires_confirmation
         else:
             event.risk_level = metadata.risk_level.name
             requires_confirmation = metadata.requires_confirmation
             
         event.target = self._extract_target(metadata, kwargs)
         
-        # --- PERMISSION & CONFIRMATION CHECK ---
+        # --- PERMISSION & CONFIRMATION CHECK (Task 14) ---
         if requires_confirmation:
             event.confirmation_status = "PENDING"
             if not self.approval_manager:
@@ -209,33 +221,65 @@ class ExecutionGate:
                     evidence="Security blocked execution: Missing ApprovalManager for restricted tool."
                 ))
             
-            # Pause and ask for permission BEFORE execution
-            action_desc = f"Execute tool '{tool_name}' (Risk Level {metadata.risk_level.name})"
-            sanitized = self._sanitize_kwargs(kwargs)
-            if sanitized:
-                action_desc += f" with args: {sanitized}"
-                
-            observability_manager.runtime_state["status"] = "WAITING_FOR_CONFIRMATION"
-            observability_manager.emit_event(ObservabilityEvent(
-                event_type="CONFIRMATION_REQUIRED",
-                tool=tool_name,
-                agent=self.agent_name,
-                risk_level=metadata.risk_level.name
-            ))
-            
-            approved = self.approval_manager.require_approval(action_desc)
-            observability_manager.runtime_state["status"] = "EXECUTING"
-            
-            if not approved:
-                event.permission_status = "DENIED"
-                event.confirmation_status = "DENIED"
-                return _finalize_audit(ToolResult(
-                    status=VerificationStatus.VERIFIED_FAILURE,
-                    message="DENIED: User rejected the action.",
-                    evidence="Execution gate blocked tool invocation."
+            # Authoritative check via Unified ApprovalManager (Task 14)
+            if hasattr(self.approval_manager, 'is_valid') and approval_id:
+                valid, reason = self.approval_manager.is_valid(
+                    approval_id=approval_id,
+                    session_id=session_id,
+                    task_id=self.task_id,
+                    tool_name=tool_name,
+                    node_id=node_id
+                )
+                if not valid:
+                    event.permission_status = "DENIED"
+                    event.confirmation_status = "DENIED"
+                    event.execution_status = "BLOCKED_APPROVAL"
+                    observability_manager.emit_event(ObservabilityEvent(
+                        task_id=self.task_id,
+                        event_type="APPROVAL_BLOCKED_EXECUTION",
+                        tool=tool_name,
+                        agent=self.agent_name,
+                        error=reason
+                    ))
+                    return _finalize_audit(ToolResult(
+                        status=VerificationStatus.VERIFIED_FAILURE,
+                        message=f"APPROVAL_BLOCKED: {reason}",
+                        evidence=f"ExecutionGate blocked tool invocation due to invalid approval: {reason}"
+                    ))
+                event.permission_status = "GRANTED"
+                event.confirmation_status = "GRANTED"
+            else:
+                # Fallback to interactive/legacy prompt
+                action_desc = f"Execute tool '{tool_name}' (Risk Level {metadata.risk_level.name})"
+                sanitized = self._sanitize_kwargs(kwargs)
+                if sanitized:
+                    action_desc += f" with args: {sanitized}"
+                    
+                observability_manager.runtime_state["status"] = "WAITING_FOR_CONFIRMATION"
+                observability_manager.emit_event(ObservabilityEvent(
+                    task_id=self.task_id,
+                    event_type="CONFIRMATION_REQUIRED",
+                    tool=tool_name,
+                    agent=self.agent_name,
+                    risk_level=metadata.risk_level.name
                 ))
-            event.permission_status = "GRANTED"
-            event.confirmation_status = "GRANTED"
+                
+                approved = False
+                if hasattr(self.approval_manager, 'require_approval'):
+                    approved = self.approval_manager.require_approval(action_desc)
+                
+                observability_manager.runtime_state["status"] = "EXECUTING"
+                
+                if not approved:
+                    event.permission_status = "DENIED"
+                    event.confirmation_status = "DENIED"
+                    return _finalize_audit(ToolResult(
+                        status=VerificationStatus.VERIFIED_FAILURE,
+                        message="DENIED: User rejected the action or missing valid approval_id.",
+                        evidence="Execution gate blocked tool invocation."
+                    ))
+                event.permission_status = "GRANTED"
+                event.confirmation_status = "GRANTED"
         else:
             event.permission_status = "GRANTED"
                 

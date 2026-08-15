@@ -36,6 +36,9 @@ class TaskNode:
     attempts: int = 0
     max_retries: int = 2
     failure_category: Optional[str] = None
+    approval_required: bool = False
+    approval_status: str = "NOT_REQUIRED"
+    approval_id: Optional[str] = None
 
 @dataclass
 class TaskGraph:

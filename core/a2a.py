@@ -54,6 +54,7 @@ class AgentMessage(BaseModel):
     session_id: Optional[str] = None
     task_id: Optional[str] = None
     node_id: Optional[str] = None
+    approval_id: Optional[str] = None
     parent_task_id: Optional[str] = None
     sender_agent: str
     recipient_agent: str
