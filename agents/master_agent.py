@@ -64,14 +64,16 @@ class MasterAgent(BaseAgent):
     name = "MasterAgent"
     description = "The central router that analyzes tasks and delegates them to specialized sub-agents. It NEVER executes tasks itself — it only routes, monitors, and explains results."
     
-    def __init__(self, llm: LLMEngine, memory: MemoryManager, approval_manager=None):
+    def __init__(self, llm: LLMEngine, memory: MemoryManager, approval_manager=None, session_manager=None, audit_logger=None):
         super().__init__(llm, memory, approval_manager)
         
         # Thread pool is now managed by Scheduler
-        self.audit_logger = SQLiteAuditLogger()
+        self.audit_logger = audit_logger or SQLiteAuditLogger()
         self.planner = Planner(self.llm, self.memory)
         from core.context_resolver import ContextResolver
         self.context_resolver = ContextResolver(self.memory, audit_logger=self.audit_logger)
+        from core.session_state import session_manager as global_session_mgr
+        self.session_manager = session_manager or global_session_mgr
         
         # Initialize standard agents
         self.agents: Dict[str, BaseAgent] = {
@@ -139,46 +141,46 @@ class MasterAgent(BaseAgent):
             finally:
                 _update_agent_status("ObserverAgent", "idle")
 
-        from core.session_state import session_manager, SessionStatus
+        from core.session_state import SessionStatus
         
         # Step 0: Session State Management (Task 13)
         if session_id:
-            session = session_manager.get_session(session_id)
+            session = self.session_manager.get_session(session_id)
             if not session:
-                session = session_manager.create_session(initial_request=task)
+                session = self.session_manager.create_session(initial_request=task)
                 session_id = session.session_id
             else:
                 # If resuming from clarification or completing new task
                 if session.session_status == SessionStatus.WAITING_FOR_CLARIFICATION:
-                    session_manager.update_session(
+                    self.session_manager.update_session(
                         session_id,
                         pending_clarification=False,
                         clarification_history=session.clarification_history + [{"clarification": task}]
                     )
-                session_manager.update_session(session_id, current_request=task)
+                self.session_manager.update_session(session_id, current_request=task)
         else:
-            session = session_manager.create_session(initial_request=task)
+            session = self.session_manager.create_session(initial_request=task)
             session_id = session.session_id
 
         print(f"\n[{self.name}] Resolving context and analyzing task intent (Session: {session_id})...")
-        session_manager.transition_state(session_id, SessionStatus.PLANNING, reason="Resolving context and planning", task_id=task_id)
+        self.session_manager.transition_state(session_id, SessionStatus.PLANNING, reason="Resolving context and planning", task_id=task_id)
         
         # Build available agents dict
         available_agents = {name: agent.description for name, agent in self.agents.items() if name != "ObserverAgent"}
         
         # Step 1: Deterministic Context & Intent Resolution (Task 12)
         structured_intent = self.context_resolver.resolve(task, available_agents)
-        session_manager.update_session(session_id, current_intent=structured_intent.model_dump())
+        self.session_manager.update_session(session_id, current_intent=structured_intent.model_dump())
         
         # Step 2: Handle ambiguous requests safely without risky execution
         if structured_intent.ambiguity and structured_intent.requires_clarification:
             clarification_msg = f"I need a bit more clarification to assist you properly: {'; '.join(structured_intent.ambiguity_reasons)}"
-            session_manager.update_session(
+            self.session_manager.update_session(
                 session_id,
                 pending_clarification=True,
                 clarification_prompt=clarification_msg
             )
-            session_manager.transition_state(
+            self.session_manager.transition_state(
                 session_id,
                 SessionStatus.WAITING_FOR_CLARIFICATION,
                 reason="Request ambiguous; clarification required"
@@ -189,13 +191,13 @@ class MasterAgent(BaseAgent):
         try:
             # Step 3: Pass StructuredIntent to Planner to construct Task Graph
             graph = self.planner.create_graph(structured_intent, available_agents)
-            session_manager.update_session(session_id, active_task_graph_id=graph.graph_id)
+            self.session_manager.update_session(session_id, active_task_graph_id=graph.graph_id)
             
             print(f"[{self.name}] Task Graph created with {len(graph.nodes)} nodes.")
             for node_id, node in graph.nodes.items():
                 print(f"  → {node.agent}: {node.description[:60]}... (Deps: {node.dependencies})")
                 
-            scheduler = DependencyScheduler(self.agents, self.audit_logger)
+            scheduler = DependencyScheduler(self.agents, self.audit_logger, session_manager=self.session_manager)
             
             # Start execution of the graph with session tracking
             result_summary = scheduler.execute_graph(graph, session_id=session_id)
