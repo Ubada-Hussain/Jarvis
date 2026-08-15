@@ -87,7 +87,7 @@ class TestSessionState(unittest.TestCase):
         
         mock_agent = MagicMock()
         mock_agent.execute.return_value = "Done"
-        scheduler = DependencyScheduler({"DevAgent": mock_agent}, self.audit_logger)
+        scheduler = DependencyScheduler({"DevAgent": mock_agent}, self.audit_logger, session_manager=self.session_mgr)
         
         scheduler.execute_graph(graph, session_id=sid)
         updated_sess = self.session_mgr.get_session(sid)
